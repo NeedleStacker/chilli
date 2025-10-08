@@ -1,5 +1,6 @@
 import os
 import subprocess
+import threading
 import time
 import atexit
 import datetime
@@ -21,56 +22,65 @@ database.init_db()
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 atexit.register(hardware.cleanup)
 
+# --- Pouzdano upravljanje logger procesom (vraćeno na jednostavniju logiku) ---
+logger_lock = threading.Lock()
+logger_process = None
 logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
-# --- Robusno upravljanje logger procesom ---
-
 def is_logger_running():
-    """Provjerava radi li logger.py proces koristeći pgrep."""
-    try:
-        # pgrep -f traži po cijeloj komandnoj liniji
-        result = subprocess.run(['pgrep', '-f', 'python3 logger.py'], stdout=subprocess.PIPE)
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False # pgrep nije instaliran
+    """Provjerava radi li logger.py podproces."""
+    global logger_process
+    if logger_process and logger_process.poll() is None:
+        return True
+    logger_process = None
+    return False
 
 def start_logger():
-    """Pokreće logger.py ako već nije pokrenut."""
-    if is_logger_running():
-        return False, "Logger je već pokrenut."
+    """Pokreće logger.py kao podproces."""
+    global logger_process
+    with logger_lock:
+        if is_logger_running():
+            return False, "Logger je već pokrenut."
 
-    logger_script = os.path.join(BASE_DIR, "logger.py")
-    if not os.path.isfile(logger_script):
-        return False, "logger.py skripta nije pronađena."
+        logger_script = os.path.join(BASE_DIR, "logger.py")
+        if not os.path.isfile(logger_script):
+            return False, "logger.py skripta nije pronađena."
 
-    with open(logger_logfile, "a") as logfile:
-        subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
+        # Brišemo stari log pri svakom novom pokretanju radi čistoće
+        if os.path.exists(logger_logfile):
+            os.remove(logger_logfile)
 
-    time.sleep(0.5)
-    if is_logger_running():
-        return True, "Logger uspješno pokrenut."
-    else:
-        return False, "Neuspješno pokretanje loggera."
+        with open(logger_logfile, "a") as logfile:
+            proc = subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
+
+        logger_process = proc
+        time.sleep(0.5)
+
+        if is_logger_running():
+            return True, f"Logger pokrenut s PID={proc.pid}."
+        else:
+            return False, "Neuspješno pokretanje loggera."
 
 def stop_logger():
-    """Zaustavlja logger.py proces koristeći pkill."""
-    if not is_logger_running():
-        return False, "Logger nije bio pokrenut."
-
-    try:
-        # pkill -f traži po cijeloj komandnoj liniji i šalje SIGTERM
-        subprocess.run(['pkill', '-f', 'python3 logger.py'])
-        time.sleep(0.5)
+    """Zaustavlja logger.py podproces."""
+    global logger_process
+    with logger_lock:
         if not is_logger_running():
-             # Očisti statusnu datoteku nakon uspješnog zaustavljanja
-            if os.path.exists(STATUS_FILE):
-                os.remove(STATUS_FILE)
-            return True, "Logger uspješno zaustavljen."
-        else:
-            return False, "Neuspješno zaustavljanje loggera."
-    except FileNotFoundError:
-        return False, "pkill naredba nije dostupna."
+            return False, "Logger nije bio pokrenut."
 
+        try:
+            pid = logger_process.pid
+            logger_process.terminate()
+            logger_process.wait(timeout=5)
+            print(f"Logger proces (PID: {pid}) zaustavljen (terminate).")
+        except (subprocess.TimeoutExpired, AttributeError):
+             print("Logger proces nije odgovarao ili je već ugašen.")
+
+        logger_process = None
+        if os.path.exists(STATUS_FILE):
+            os.remove(STATUS_FILE)
+
+        return True, "Logger zaustavljen."
 
 # ---- Rute za stranice (HTML) ----
 @app.route("/")
@@ -99,7 +109,7 @@ def api_status():
         if os.path.exists(STATUS_FILE):
             with open(STATUS_FILE, "r") as f:
                 return {"status": f.read().strip()}
-        return {"status": "RUNNING (statusna datoteka nedostaje)"}
+        return {"status": f"RUNNING (PID: {logger_process.pid if logger_process else 'unknown'})"}
     else:
         return {"status": "Logger nije pokrenut"}
 
@@ -111,7 +121,6 @@ def api_logs():
 
 @app.route("/api/logs/all")
 def api_logs_all():
-    # ... (logika ostaje ista)
     allowed_columns = {
         "air_temp": "dht22_air_temp", "air_humidity": "dht22_humidity",
         "soil_temp": "ds18b20_soil_temp", "soil_percent": "soil_percent", "lux": "lux",
@@ -121,24 +130,48 @@ def api_logs_all():
     where_conditions = []
 
     for key, value in request.args.items():
-        parts = key.split('_')
-        if len(parts) != 2: continue
-        col, op = parts
-        if col not in allowed_columns: continue
-        operator_map = {"gt": ">", "lt": "<", "eq": "="}
-        if op not in operator_map: continue
+        # Dozvoli samo jednostavne where uvjete za sigurnost
+        if key in allowed_columns and value:
+            where_conditions.append(f"{allowed_columns[key]} {value}")
 
-        db_column = allowed_columns[col]
-        operator = operator_map[op]
-        where_conditions.append(f"{db_column} {operator} ?")
-        query_params.append(value)
+    # Spajanje s 'AND' ako ima više uvjeta
+    where_clause = " AND ".join(where_conditions)
 
-    rows = database.get_logs_where(" AND ".join(where_conditions), query_params)
+    rows = database.get_logs_where(where_clause, [])
     return jsonify(rows)
+
+
+@app.route("/api/logs/delete", methods=["POST"])
+def api_logs_delete():
+    data = request.json
+    ids = data.get("ids")
+    ok, msg = database.delete_logs_by_id(ids)
+    return jsonify({"ok": ok, "msg": msg})
+
+@app.route("/api/sensor/read", methods=["GET"])
+def api_sensor_read():
+    sensor_type = request.args.get("type", "all")
+    try:
+        if sensor_type == "ads":
+            raw, voltage = sensors.read_soil_raw()
+            percent = sensors.read_soil_percent_from_voltage(voltage)
+            return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": percent})
+        elif sensor_type == "dht":
+            temp, hum = sensors.test_dht()
+            return jsonify({"type": "dht", "temperature": temp, "humidity": hum})
+        elif sensor_type == "ds18b20":
+            temp = sensors.read_ds18b20_temp()
+            return jsonify({"type": "ds18b20", "temperature": temp})
+        elif sensor_type == "bh1750":
+            lux = sensors.read_bh1750_lux()
+            return jsonify({"type": "bh1750", "lux": lux})
+        else:
+            return jsonify({"error": "Nepoznat tip senzora"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
-    # ... (logika ostaje ista)
     try:
         data = request.get_json(force=True)
         if not data or 'relay' not in data or 'state' not in data:
@@ -165,7 +198,7 @@ def api_relay_toggle():
 
 @app.route("/relay_log_data")
 def relay_log_data():
-    log_data = database.get_relay_log(limit=15) # <<< SMANJEN LIMIT NA 15
+    log_data = database.get_relay_log(limit=15)
 
     chart_data = {"RELAY1": [], "RELAY2": []}
     table_data = []
@@ -205,4 +238,5 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False) # Debug mode is OFF for stability
+    # use_reloader=False je ključno za stabilno stanje logger_process varijable
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)

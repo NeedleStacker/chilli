@@ -2,113 +2,90 @@ import os
 import json
 import time
 import glob
-import smbus2
-import Adafruit_DHT
+import random
 
 # Moduli projekta
-import hardware  # Za pristup inicijaliziranom hardware.i2c
 from config import (
     CALIB_FILE, W1_BASE_DIR, BH1750_ADDR,
-    DHT_SENSOR, DHT_PIN
+    DHT_SENSOR, DHT_PIN, DEV_MODE
 )
 
-# Adafruit biblioteke za ADS1115
-from adafruit_ads1x15.analog_in import AnalogIn
-import adafruit_ads1x15.ads1115 as ADS
-
-
-# --- Privatna pomoćna funkcija za ADS1115 ---
-def _read_ads_once(ads_instance):
-    """
-    Izvršava jedno stabilno očitanje s ADS1115.
-    Uključuje 'flush' korak za stabilizaciju očitanja.
-    """
-    chan = AnalogIn(ads_instance, ADS.P0)
-    _ = chan.value  # Prvo očitanje za "buđenje" kanala
-    time.sleep(0.05)
-    raw = chan.value
-    voltage = chan.voltage
-    return raw, voltage
+# Biblioteke koje se koriste samo ako DEV_MODE = False
+# Ovo sprječava 'import' greške na sustavima bez hardverskih biblioteka
+if not DEV_MODE:
+    try:
+        import smbus2
+        import Adafruit_DHT
+        from adafruit_ads1x15.analog_in import AnalogIn
+        import adafruit_ads1x15.ads1115 as ADS
+        import hardware # hardware se koristi samo s pravim senzorima
+    except ImportError as e:
+        print(f"[WARN] Nije moguće uvesti hardverske biblioteke: {e}. Provjerite instalaciju.")
 
 
 # --- Glavne funkcije za očitavanje senzora ---
 
 def read_soil_raw():
-    """
-    Čita sirovu vrijednost i napon s ADS1115 senzora vlage.
-    Koristi globalnu I2C sabirnicu inicijaliziranu u 'hardware.py'.
-    """
-    if hardware.i2c is None:
-        print("[ERROR] I2C sabirnica nije inicijalizirana. Ne mogu očitati senzor vlage.")
+    """Čita sirovu vrijednost i napon s ADS1115 senzora vlage."""
+    if DEV_MODE:
+        fake_voltage = random.uniform(0.5, 2.5)
+        fake_raw = int(fake_voltage * 10000)
+        return fake_raw, fake_voltage
+
+    if not 'hardware' in locals() or hardware.i2c is None:
+        print("[ERROR] I2C sabirnica nije inicijalizirana.")
         return None, None
     try:
         ads = ADS.ADS1115(hardware.i2c)
         ads.gain = 1
-        return _read_ads_once(ads)
+        chan = AnalogIn(ads, ADS.P0)
+        _ = chan.value
+        time.sleep(0.05)
+        return chan.value, chan.voltage
     except Exception as e:
         print(f"[ERROR] Greška pri čitanju s ADS1115: {e}")
         return None, None
 
-
-def _get_ds18b20_device_file():
-    """Pronađi datoteku 1-Wire uređaja. Vraća putanju ili None."""
-    try:
-        # Traži direktorij koji počinje s '28-'
-        device_folders = glob.glob(os.path.join(W1_BASE_DIR, '28-*'))
-        if not device_folders:
-            print("[WARN] DS18B20 senzor nije pronađen (nema '28-*' direktorija).")
-            return None
-        # Vrati punu putanju do 'w1_slave' datoteke
-        return os.path.join(device_folders[0], 'w1_slave')
-    except Exception as e:
-        print(f"[ERROR] Greška pri traženju DS18B20 uređaja: {e}")
-        return None
-
-
 def read_ds18b20_temp():
-    """Čita temperaturu s DS18B20 senzora. Vraća temperaturu u °C ili None."""
-    device_file = _get_ds18b20_device_file()
-    if not device_file:
-        return None
+    """Čita temperaturu s DS18B20 senzora."""
+    if DEV_MODE:
+        return random.uniform(18.0, 22.0)
 
     try:
+        device_folders = glob.glob(os.path.join(W1_BASE_DIR, '28-*'))
+        if not device_folders: return None
+        device_file = os.path.join(device_folders[0], 'w1_slave')
         with open(device_file, 'r') as f:
             lines = f.readlines()
-
-        # Provjeri CRC (cyclic redundancy check)
-        if lines[0].strip()[-3:] != 'YES':
-            print("[WARN] DS18B20 CRC provjera neuspjela.")
-            return None
-
-        # Pronađi temperaturu u drugom redu
+        if lines[0].strip()[-3:] != 'YES': return None
         equals_pos = lines[1].find('t=')
         if equals_pos != -1:
-            temp_string = lines[1][equals_pos + 2:]
-            return float(temp_string) / 1000.0
-    except (IOError, IndexError, ValueError) as e:
-        print(f"[ERROR] Greška pri čitanju temperature s DS18B20: {e}")
+            return float(lines[1][equals_pos + 2:]) / 1000.0
+    except Exception as e:
+        print(f"[ERROR] Greška pri čitanju DS18B20: {e}")
         return None
 
-
 def read_bh1750_lux():
-    """Čita osvjetljenje u luksima s BH1750 senzora."""
+    """Čita osvjetljenje s BH1750 senzora."""
+    if DEV_MODE:
+        return random.uniform(100.0, 1500.0)
+
     try:
-        # Mod za kontinuirano mjerenje visoke rezolucije
-        BH1750_MODE = 0x10
-        bus = smbus2.SMBus(1)  # Koristi /dev/i2c-1
-        bus.write_byte(BH1750_ADDR, BH1750_MODE)
-        time.sleep(0.2) # Pričekaj da senzor obavi mjerenje
+        bus = smbus2.SMBus(1)
+        bus.write_byte(BH1750_ADDR, 0x10)
+        time.sleep(0.2)
         data = bus.read_i2c_block_data(BH1750_ADDR, 0, 2)
-        lux = (data[0] << 8 | data[1]) / 1.2
         bus.close()
-        return lux
+        return (data[0] << 8 | data[1]) / 1.2
     except Exception as e:
         print(f"[WARN] BH1750 očitavanje nije uspjelo: {e}")
         return None
 
-
 def test_dht():
-    """Očitava DHT22 senzor. Vraća tuple (temperatura, vlaga) ili (None, None)."""
+    """Očitava DHT22 senzor."""
+    if DEV_MODE:
+        return random.uniform(23.0, 27.0), random.uniform(40.0, 60.0)
+
     try:
         humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
         return temperature, humidity
@@ -116,99 +93,55 @@ def test_dht():
         print(f"[WARN] DHT22 očitavanje nije uspjelo: {e}")
         return None, None
 
-
 # --- Kalibracija i izračun postotka ---
 
 def load_calibration():
-    """Učitava kalibracijske vrijednosti (suho/mokro) iz JSON datoteke."""
+    """Učitava kalibracijske vrijednosti."""
     defaults = {"dry_v": 1.60, "wet_v": 0.20}
-    if not os.path.exists(CALIB_FILE):
-        print("[WARN] Kalibracijska datoteka nije pronađena, koristim zadane vrijednosti.")
-        return defaults
+    if not os.path.exists(CALIB_FILE): return defaults
     try:
-        with open(CALIB_FILE, "r") as f:
-            calib = json.load(f)
-        # Osiguraj da postoje ispravni ključevi
+        with open(CALIB_FILE, "r") as f: calib = json.load(f)
         if "dry_v" in calib and "wet_v" in calib:
             return {"dry_v": float(calib["dry_v"]), "wet_v": float(calib["wet_v"])}
-        else:
-            print("[WARN] Ključevi 'dry_v' i 'wet_v' nisu pronađeni, koristim zadane vrijednosti.")
-            return defaults
-    except (json.JSONDecodeError, TypeError) as e:
-        print(f"[ERROR] Greška pri čitanju kalibracijske datoteke: {e}. Koristim zadane vrijednosti.")
+        return defaults
+    except Exception:
         return defaults
 
-
-def read_soil_percent_from_voltage(voltage, debug=False):
-    """Pretvara napon senzora vlage u postotak (0-100%)."""
-    if voltage is None:
-        return 0.0
-
+def read_soil_percent_from_voltage(voltage):
+    """Pretvara napon senzora vlage u postotak."""
+    if voltage is None: return 0.0
     calib = load_calibration()
     dry_v, wet_v = calib["dry_v"], calib["wet_v"]
-
-    # Osiguraj da je dry_v uvijek veća vrijednost
-    if dry_v < wet_v:
-        dry_v, wet_v = wet_v, dry_v
-
+    if dry_v < wet_v: dry_v, wet_v = wet_v, dry_v
     span = dry_v - wet_v
-    if span <= 0:
-        return 0.0
-
-    # Izračun postotka
+    if span <= 0: return 0.0
     percent = 100 * (dry_v - voltage) / span
-    percent = max(0.0, min(100.0, percent)) # Ograniči na 0-100
-
-    if debug:
-        print(f"[DEBUG] V={voltage:.3f}V, Dry={dry_v}V, Wet={wet_v}V -> {percent:.2f}%")
-
-    return percent
-
+    return max(0.0, min(100.0, percent))
 
 # --- Funkcije za testiranje iz komandne linije ---
 
 def test_ds18b20():
-    """Testira DS18B20 senzor i ispisuje rezultat."""
     temp = read_ds18b20_temp()
-    if temp is not None:
-        print(f"DS18B20 Temperatura: {temp:.2f}°C")
-    else:
-        print("DS18B20: Neuspješno očitavanje.")
-
+    print(f"DS18B20 Temperatura: {temp:.2f}°C" if temp is not None else "DS18B20: Neuspješno očitavanje.")
 
 def test_ads():
-    """Testira ADS1115 senzor i ispisuje rezultat."""
     raw, voltage = read_soil_raw()
     if raw is not None:
-        pct = read_soil_percent_from_voltage(voltage, debug=True)
-        print(f"ADS1115: Raw={raw}, Voltage={voltage:.3f}V")
-        print(f"Izračunata vlaga: {pct:.2f}%")
+        pct = read_soil_percent_from_voltage(voltage)
+        print(f"ADS1115: Raw={raw}, Voltage={voltage:.3f}V -> {pct:.2f}%")
     else:
         print("ADS1115: Neuspješno očitavanje.")
 
-
 def calibrate_ads(dry=False, wet=False):
-    """Sprema kalibracijske vrijednosti za senzor vlage."""
-    if not dry and not wet:
-        print("Nije odabrana opcija. Koristi --dry ili --wet.")
-        return
-
+    """Sprema kalibracijske vrijednosti."""
+    if not dry and not wet: print("Koristi --dry ili --wet."); return
     raw, voltage = read_soil_raw()
-    if voltage is None:
-        print("[ERROR] Nije moguće očitati ADS1115 za kalibraciju.")
-        return
-
+    if voltage is None: print("[ERROR] Nije moguće očitati ADS1115."); return
     calib = load_calibration()
-    if dry:
-        calib["dry_v"] = voltage
-        print(f"Spremljena 'SUHA' referenca: {voltage:.3f}V")
-    if wet:
-        calib["wet_v"] = voltage
-        print(f"Spremljena 'MOKRA' referenca: {voltage:.3f}V")
-
+    if dry: calib["dry_v"] = voltage; print(f"Spremljena 'SUHA' referenca: {voltage:.3f}V")
+    if wet: calib["wet_v"] = voltage; print(f"Spremljena 'MOKRA' referenca: {voltage:.3f}V")
     try:
-        with open(CALIB_FILE, "w") as f:
-            json.dump(calib, f, indent=4)
+        with open(CALIB_FILE, "w") as f: json.dump(calib, f, indent=4)
         print("Kalibracija uspješno spremljena.")
     except IOError as e:
         print(f"[ERROR] Nije moguće spremiti kalibracijsku datoteku: {e}")
