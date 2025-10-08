@@ -106,8 +106,8 @@ def run_logger():
             )
             print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Zapis spremljen.")
 
-            if should_water(soil_percent):
-                perform_watering()
+            # if should_water(soil_percent):
+            #     perform_watering()
 
             time.sleep(LOG_INTERVAL_SECONDS)
     finally:

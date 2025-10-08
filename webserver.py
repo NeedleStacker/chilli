@@ -28,26 +28,43 @@ logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
 def get_logger_pid():
     """Čita PID iz PID datoteke. Vraća int ili None."""
+    print("[DEBUG] Pokušavam pročitati PID datoteku...")
+    if not os.path.exists(PID_FILE):
+        print(f"[DEBUG] PID datoteka ne postoji na putanji: {PID_FILE}")
+        return None
     try:
         with open(PID_FILE, 'r') as f:
-            return int(f.read().strip())
-    except (FileNotFoundError, ValueError):
+            pid_str = f.read().strip()
+            pid = int(pid_str)
+            print(f"[DEBUG] Pročitan PID iz datoteke: {pid}")
+            return pid
+    except (ValueError, IOError) as e:
+        print(f"[DEBUG] Greška pri čitanju PID datoteke: {e}")
         return None
 
 def is_logger_running():
     """Provjerava radi li logger proces provjerom PID-a."""
+    print("\n[DEBUG] --- Provjera statusa loggera ---")
     pid = get_logger_pid()
     if not pid:
+        print("[DEBUG] Status: NIJE POKRENUT (nema PID-a)")
         return False
+
     try:
         # Šalje signal 0 procesu. Ne radi ništa ako proces postoji, inače baca iznimku.
         os.kill(pid, 0)
+        print(f"[DEBUG] Proces s PID-om {pid} je aktivan (os.kill uspješan).")
+        print("[DEBUG] Status: POKRENUT")
+        return True
     except OSError:
         # Proces ne postoji, očisti zaostalu PID datoteku
-        os.remove(PID_FILE)
+        print(f"[DEBUG] Proces s PID-om {pid} ne postoji (os.kill neuspješan). Čistim staru PID datoteku.")
+        try:
+            os.remove(PID_FILE)
+        except OSError as e:
+            print(f"[DEBUG] Greška pri brisanju stare PID datoteke: {e}")
+        print("[DEBUG] Status: NIJE POKRENUT")
         return False
-    else:
-        return True
 
 def start_logger():
     """Pokreće logger.py ako već nije pokrenut."""
@@ -58,14 +75,13 @@ def start_logger():
     if not os.path.isfile(logger_script):
         return False, "logger.py skripta nije pronađena."
 
-    # Brišemo stari log pri svakom novom pokretanju radi čistoće
     if os.path.exists(logger_logfile):
         os.remove(logger_logfile)
 
     with open(logger_logfile, "a") as logfile:
         subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
 
-    time.sleep(1) # Daj vremena procesu da se pokrene i stvori PID datoteku
+    time.sleep(1)
 
     if is_logger_running():
         return True, "Logger uspješno pokrenut."
@@ -78,16 +94,19 @@ def stop_logger():
     if not pid:
         return False, "Logger nije bio pokrenut."
 
+    print(f"[DEBUG] Pokušavam zaustaviti proces s PID-om {pid}...")
     try:
-        os.kill(pid, signal.SIGTERM) # Šalje signal za sigurno gašenje
-        time.sleep(1) # Daj vremena procesu da se ugasi
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(1)
         if not is_logger_running():
+            print(f"[DEBUG] Proces {pid} uspješno zaustavljen.")
             return True, "Logger uspješno zaustavljen."
         else:
-            # Ako se nije ugasio, prisili ga
+            print(f"[DEBUG] Proces {pid} se nije ugasio, pokušavam prisilno (SIGKILL)...")
             os.kill(pid, signal.SIGKILL)
             return True, "Logger prisilno zaustavljen."
-    except OSError:
+    except OSError as e:
+        print(f"[DEBUG] Greška pri zaustavljanju loggera: {e}")
         return False, "Greška pri zaustavljanju loggera."
 
 
@@ -121,7 +140,7 @@ def api_status():
     else:
         return {"status": "Logger nije pokrenut"}
 
-# Ostale API rute ostaju iste...
+# ... (ostale rute ostaju iste) ...
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
     limit = request.args.get("limit", 100, type=int)
@@ -138,14 +157,10 @@ def api_logs_all():
     query_params = []
     where_conditions = []
 
-    # Dozvoli samo jednostavne where uvjete za sigurnost
     where_str = request.args.get("where", "")
     if where_str:
-        # Ovaj dio je pojednostavljen radi sigurnosti i ne podržava složene upite
-        # Za produkciju bi trebalo koristiti sigurniji parser
         parts = where_str.split()
         if len(parts) == 3 and parts[0] in allowed_columns:
-            # Podržava samo "column operator value"
             db_column = allowed_columns[parts[0]]
             operator = parts[1]
             value = parts[2]
@@ -166,6 +181,7 @@ def api_logs_delete():
 
 @app.route("/api/sensor/read", methods=["GET"])
 def api_sensor_read():
+    # ... (logika ostaje ista) ...
     sensor_type = request.args.get("type", "all")
     try:
         if sensor_type == "ads":
@@ -188,6 +204,7 @@ def api_sensor_read():
 
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
+    # ... (logika ostaje ista) ...
     try:
         data = request.get_json(force=True)
         if not data or 'relay' not in data or 'state' not in data:
@@ -214,6 +231,7 @@ def api_relay_toggle():
 
 @app.route("/relay_log_data")
 def relay_log_data():
+    # ... (logika ostaje ista) ...
     log_data = database.get_relay_log(limit=15)
 
     chart_data = {"RELAY1": [], "RELAY2": []}
@@ -254,5 +272,4 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    # use_reloader=False je ključno za stabilno stanje
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
