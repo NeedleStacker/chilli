@@ -192,6 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // ------- Inicijalno učitavanje -------
+    // ------- Inicijalno učitavanje i periodično osvježavanje -------
     refreshAllData();
+    setInterval(refreshAllData, 15000); // Osvježavanje svakih 15 sekundi
 });
