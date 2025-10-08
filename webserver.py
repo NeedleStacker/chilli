@@ -15,8 +15,9 @@ from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
 from flask import Flask, render_template, jsonify, request
 
 # --- Inicijalizacija ---
-# Inicijaliziraj hardver prije pokretanja bilo kakve logike
+# Inicijaliziraj hardver i bazu podataka prije pokretanja bilo kakve logike
 hardware.initialize()
+database.init_db()
 
 # Kreiraj Flask aplikaciju
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
