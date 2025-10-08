@@ -126,6 +126,17 @@ def run_logger():
         print("Logger zaustavljen.")
 
 
-# Datoteka logger.py je sada čisti modul.
-# Za pokretanje loggera, koristite `webserver.py`.
-# Za testiranje i administraciju, koristite `manage.py`.
+if __name__ == "__main__":
+    """
+    Glavna ulazna točka kada se skripta pokrene direktno.
+    Ovo omogućuje webserveru da pokrene logger kao zaseban proces.
+    """
+    try:
+        hardware.initialize()
+        run_logger()
+    except KeyboardInterrupt:
+        print("\nLogger proces prekinut.")
+    except Exception as e:
+        print(f"Dogodila se kritična greška u loggeru: {e}")
+    finally:
+        hardware.cleanup()

@@ -49,13 +49,12 @@ def start_logger():
         if not os.path.isfile(logger_script):
             return False, "logger.py skripta nije pronađena."
 
-        # Koristi 'run' naredbu definiranu u logger.py
-        cmd = ["python3", logger_script, "run"]
+        cmd = ["python3", logger_script]
         with open(logger_logfile, "a") as logfile:
             proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
 
         logger_process = proc
-        time.sleep(0.5) # Daj vremena procesu da se pokrene ili sruši
+        time.sleep(0.5)
 
         if is_logger_running():
             return True, f"Logger pokrenut s PID={proc.pid}."
@@ -72,14 +71,13 @@ def stop_logger():
         try:
             pid = logger_process.pid
             logger_process.terminate()
-            logger_process.wait(timeout=5) # Pričekaj do 5 sekundi
+            logger_process.wait(timeout=5)
             print(f"Logger proces (PID: {pid}) zaustavljen (terminate).")
         except subprocess.TimeoutExpired:
             logger_process.kill()
             print(f"Logger proces (PID: {pid}) nije odgovarao, poslan kill.")
 
         logger_process = None
-        # Očisti statusnu datoteku
         if os.path.exists(STATUS_FILE):
             os.remove(STATUS_FILE)
 
@@ -88,9 +86,10 @@ def stop_logger():
 # ---- Rute za stranice (HTML) ----
 @app.route("/")
 def index():
-    # Dohvati zadnjih 50 zapisa za prikaz na početnoj stranici
-    # Ova logika će biti premještena u database.py
     logs = database.get_logs(limit=50, order="DESC")
+    # Obrni logove da budu u ispravnom poretku za prikaz na stranici
+    if logs:
+        logs.reverse()
     return render_template("index.html",
                            logs=logs,
                            relay1_state=relays.get_relay_state(RELAY1),
@@ -103,8 +102,9 @@ def all_data_page():
 
 # ---- API Rute ----
 
-@app.route("/api/run/start", methods=["POST"])
-def api_run_start():
+# Vraćena ruta koju poziva main.js
+@app.route("/api/run/start_first", methods=["POST"])
+def api_run_start_first():
     ok, msg = start_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
@@ -113,52 +113,47 @@ def api_run_stop():
     ok, msg = stop_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
-@app.route("/api/run/status", methods=["GET"])
-def api_run_status():
-    running = is_logger_running()
-    pid = logger_process.pid if running else None
-    return jsonify({"running": running, "pid": pid})
+# Vraćena ruta koju poziva main.js
+@app.route("/api/status")
+def api_status():
+    if os.path.exists(STATUS_FILE):
+        with open(STATUS_FILE, "r") as f:
+            content = f.read().strip()
+        return {"status": content}
+    else:
+        # Provjeri je li logger proces aktivan čak i ako datoteka ne postoji
+        if is_logger_running():
+            return {"status": f"RUNNING (PID: {logger_process.pid})"}
+        return {"status": "Logger nije pokrenut"}
 
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
     limit = request.args.get("limit", 100, type=int)
-    # Logika će biti prebačena u database.py
-    rows = database.get_logs(limit=limit, order="DESC")
+    rows = database.get_logs(limit=limit, order="ASC") # Grafovi očekuju ASC poredak
     return jsonify(rows)
 
 @app.route("/api/logs/all", methods=["GET"])
 def api_logs_all():
-    # --- SIGURNOSNI POPRAVAK (SQL Injection) ---
-    # Dopušteni stupci za filtriranje kako bi se spriječilo ubacivanje proizvoljnog SQL-a
     allowed_columns = {
-        "air_temp": "dht22_air_temp",
-        "air_humidity": "dht22_humidity",
-        "soil_temp": "ds18b20_soil_temp",
-        "soil_percent": "soil_percent",
-        "lux": "lux"
+        "air_temp": "dht22_air_temp", "air_humidity": "dht22_humidity",
+        "soil_temp": "ds18b20_soil_temp", "soil_percent": "soil_percent", "lux": "lux"
     }
-
     query_params = []
     where_conditions = []
 
-    # Primjer upita: /api/logs/all?lux_gt=100&soil_percent_lt=50
     for key, value in request.args.items():
         parts = key.split('_')
         if len(parts) != 2: continue
-
         col, op = parts
         if col not in allowed_columns: continue
-
         operator_map = {"gt": ">", "lt": "<", "eq": "="}
         if op not in operator_map: continue
 
         db_column = allowed_columns[col]
         operator = operator_map[op]
-
         where_conditions.append(f"{db_column} {operator} ?")
         query_params.append(value)
 
-    # Ova logika će biti premještena u database.py, ali je ovdje sigurno implementirana
     rows = database.get_logs_where(" AND ".join(where_conditions), query_params)
     return jsonify(rows)
 
@@ -166,7 +161,6 @@ def api_logs_all():
 def api_logs_delete():
     data = request.json
     ids = data.get("ids")
-    # Logika će biti prebačena u database.py
     ok, msg = database.delete_logs_by_id(ids)
     return jsonify({"ok": ok, "msg": msg})
 
@@ -195,9 +189,13 @@ def api_sensor_read():
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
     try:
-        data = request.get_json()
-        relay_num = data.get("relay", type=int)
-        state = data.get("state", type=bool)
+        # Koristi force=True da se osigura parsiranje čak i ako content-type nije točan
+        data = request.get_json(force=True)
+        if not data or 'relay' not in data or 'state' not in data:
+            return jsonify({"ok": False, "error": "Nedostaju 'relay' ili 'state' podaci"}), 400
+
+        relay_num = int(data["relay"])
+        state = bool(data["state"])
 
         pin_map = {1: RELAY1, 2: RELAY2}
         if relay_num not in pin_map:
@@ -212,14 +210,26 @@ def api_relay_toggle():
         print(f"[WEB] Relej {relay_name} prebačen u stanje {'ON' if state else 'OFF'}.")
         return jsonify({"ok": True, "relay": relay_name, "state": "ON" if state else "OFF"})
     except Exception as e:
+        # Logiraj grešku za lakše debugiranje
+        import traceback
+        traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/relay_log", methods=["GET"])
-def api_relay_log():
-    limit = request.args.get("limit", 10, type=int)
-    # Logika će biti prebačena u database.py
-    log_data = database.get_relay_log(limit=limit)
-    return jsonify(log_data)
+# Vraćena ruta koju poziva main.js
+@app.route("/relay_log_data")
+def relay_log_data():
+    log_data = database.get_relay_log(limit=50) # Povećan limit za bolji prikaz
+    # Transformiraj podatke u format koji grafikon očekuje
+    transformed_data = {"RELAY1": [], "RELAY2": []}
+    for entry in reversed(log_data): # Obrnuti poredak da bude kronološki
+        ts = datetime.datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").strftime("%H:%M:%S")
+        item = {"t": ts, "v": 1 if entry['action'] == 'ON' else 0}
+        if entry['relay_name'] == 'RELAY1':
+            transformed_data['RELAY1'].append(item)
+        elif entry['relay_name'] == 'RELAY2':
+            transformed_data['RELAY2'].append(item)
+
+    return jsonify(transformed_data)
 
 @app.route("/logs/file")
 def get_logfile():
@@ -234,5 +244,6 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    # Pokreni Flask server na svim mrežnim sučeljima
+    # Importaj datetime ovdje jer se koristi samo u /relay_log_data
+    import datetime
     app.run(host="0.0.0.0", port=5000, debug=True)
