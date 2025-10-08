@@ -3,6 +3,7 @@ import subprocess
 import threading
 import time
 import atexit
+import datetime
 
 # Moduli projekta
 import hardware
@@ -87,7 +88,6 @@ def stop_logger():
 @app.route("/")
 def index():
     logs = database.get_logs(limit=50, order="DESC")
-    # Obrni logove da budu u ispravnom poretku za prikaz na stranici
     if logs:
         logs.reverse()
     return render_template("index.html",
@@ -100,9 +100,8 @@ def index():
 def all_data_page():
     return render_template("all_data.html")
 
-# ---- API Rute ----
+# ---- API Rute (Ispravljene) ----
 
-# Vraćena ruta koju poziva main.js
 @app.route("/api/run/start_first", methods=["POST"])
 def api_run_start_first():
     ok, msg = start_logger()
@@ -113,7 +112,6 @@ def api_run_stop():
     ok, msg = stop_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
-# Vraćena ruta koju poziva main.js
 @app.route("/api/status")
 def api_status():
     if os.path.exists(STATUS_FILE):
@@ -121,7 +119,6 @@ def api_status():
             content = f.read().strip()
         return {"status": content}
     else:
-        # Provjeri je li logger proces aktivan čak i ako datoteka ne postoji
         if is_logger_running():
             return {"status": f"RUNNING (PID: {logger_process.pid})"}
         return {"status": "Logger nije pokrenut"}
@@ -129,10 +126,10 @@ def api_status():
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
     limit = request.args.get("limit", 100, type=int)
-    rows = database.get_logs(limit=limit, order="ASC") # Grafovi očekuju ASC poredak
+    rows = database.get_logs(limit=limit, order="ASC")
     return jsonify(rows)
 
-@app.route("/api/logs/all", methods=["GET"])
+@app.route("/api/logs/all")
 def api_logs_all():
     allowed_columns = {
         "air_temp": "dht22_air_temp", "air_humidity": "dht22_humidity",
@@ -189,7 +186,6 @@ def api_sensor_read():
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
     try:
-        # Koristi force=True da se osigura parsiranje čak i ako content-type nije točan
         data = request.get_json(force=True)
         if not data or 'relay' not in data or 'state' not in data:
             return jsonify({"ok": False, "error": "Nedostaju 'relay' ili 'state' podaci"}), 400
@@ -210,18 +206,15 @@ def api_relay_toggle():
         print(f"[WEB] Relej {relay_name} prebačen u stanje {'ON' if state else 'OFF'}.")
         return jsonify({"ok": True, "relay": relay_name, "state": "ON" if state else "OFF"})
     except Exception as e:
-        # Logiraj grešku za lakše debugiranje
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
-# Vraćena ruta koju poziva main.js
 @app.route("/relay_log_data")
 def relay_log_data():
-    log_data = database.get_relay_log(limit=50) # Povećan limit za bolji prikaz
-    # Transformiraj podatke u format koji grafikon očekuje
+    log_data = database.get_relay_log(limit=50)
     transformed_data = {"RELAY1": [], "RELAY2": []}
-    for entry in reversed(log_data): # Obrnuti poredak da bude kronološki
+    for entry in reversed(log_data):
         ts = datetime.datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").strftime("%H:%M:%S")
         item = {"t": ts, "v": 1 if entry['action'] == 'ON' else 0}
         if entry['relay_name'] == 'RELAY1':
@@ -233,7 +226,6 @@ def relay_log_data():
 
 @app.route("/logs/file")
 def get_logfile():
-    """Prikazuje zadnjih 20000 znakova iz log datoteke loggera."""
     if os.path.isfile(logger_logfile):
         try:
             with open(logger_logfile, "r") as f:
@@ -244,6 +236,4 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    # Importaj datetime ovdje jer se koristi samo u /relay_log_data
-    import datetime
     app.run(host="0.0.0.0", port=5000, debug=True)
