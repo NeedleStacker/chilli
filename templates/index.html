@@ -54,7 +54,7 @@
 						</div>
 					</div>
 					<div class="d-flex justify-content-between align-items-center">
-						<h5>Posljednja mjerenja (zadnjih 100)</h5>
+						<h5>Posljednja mjerenja</h5>
 					</div>
 					<table class="table table-sm table-striped">
 						<thead class="table-light">
@@ -68,24 +68,23 @@
 								<th>Lux</th>
 							</tr>
 						</thead>
-						<tbody id="logsBody"> {% for r in logs %} <tr class="{{ 'unstable' if r.stable == 0 else '' }}">
-								<td>{{ r.id }}</td>
-								<td>{{ r.timestamp }}</td>
-								<td>{{ r.air_temp }}</td>
-								<td>{{ r.air_humidity }}</td>
-								<td>{{ r.soil_temp }}</td>
-								<td>{{ r.soil_percent }}</td>
-								<td>{{ r.lux }}</td>
-							</tr> {% endfor %} </tbody>
+						<tbody id="logsBody">
+                        </tbody>
 					</table>
 				</div>
 				<!-- Kontrola -->
 				<div class="col-md-7">
 					<div class="row">
 						<div class="col-md-6">
-							<h5 class="mb-2">Status Logger-a</h5>
-							<p>Status: <strong id="loggerStatusTXT" class="fw-bold">Učitavanje...</strong></p>
-							<small class="text-muted">Logger se sada pokreće i zaustavlja ručno u terminalu (`python3 logger.py`).</small>
+							<h5 class="mb-2">Pokretanje Logger-a</h5>
+							<div class="d-flex gap-2 mb-2">
+								<button id="btnStartFirst" class="btn btn-success">RUN</button>
+								<button id="btnStop" class="btn btn-danger">STOP</button>
+							</div>
+							<p>
+								<strong>Status:</strong>
+								<span id="loggerStatusTXT" class="fw-bold">Učitavanje...</span>
+							</p>
 						</div>
 						<div class="col-md-6">
 							<h5 class="mb-2">Releji</h5>
