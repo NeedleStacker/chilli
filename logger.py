@@ -102,13 +102,19 @@ def run_logger():
             soil_percent = round(soil_percent, 2) if soil_percent is not None else None
             lux = round(lux, 2) if lux is not None else None
 
+            # Detaljan ispis očitanih vrijednosti za debugiranje
+            print("[LOGGER-DEBUG] Očitane vrijednosti prije upisa u bazu:")
+            print(f"  - Timestamp: {timestamp}")
+            print(f"  - Zrak Temp: {air_temp}, Vlaga: {air_humidity}")
+            print(f"  - Zemlja Temp: {soil_temp}")
+            print(f"  - Vlaga Raw: {soil_raw}, Napon: {soil_voltage}, Postotak: {soil_percent}")
+            print(f"  - Svjetlost Lux: {lux}")
+
             # Upis u bazu - funkcija sada sama upravlja konekcijom
             database.insert_log(timestamp, air_temp, air_humidity, soil_temp,
                                 soil_raw, soil_voltage, soil_percent, lux)
 
-            print(f"[{timestamp}] TempZrak:{air_temp}°C, VlagaZrak:{air_humidity}%, "
-                  f"TempZemlja:{soil_temp}°C, VlagaZemlja:{soil_percent}%, "
-                  f"Lux:{lux} lx")
+            print(f"[{timestamp}] Zapis spremljen u bazu.")
 
             # Provjera i izvršavanje automatskog zalijevanja
             if should_water(soil_percent):
