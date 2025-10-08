@@ -129,9 +129,13 @@ def run_logger():
             print(f"  - Vlaga Raw: {soil_raw}, Napon: {soil_voltage}, Postotak: {soil_percent}")
             print(f"  - Svjetlost Lux: {lux}")
 
+            # Fiksna vrijednost za 'stable' stupac
+            stable_flag = 1
+            print(f"  - Stable: {stable_flag}")
+
             # Upis u bazu - funkcija sada sama upravlja konekcijom
             database.insert_log(timestamp, air_temp, air_humidity, soil_temp,
-                                soil_raw, soil_voltage, soil_percent, lux)
+                                soil_raw, soil_voltage, soil_percent, lux, stable_flag)
 
             print(f"[{timestamp}] Zapis spremljen u bazu.")
 

@@ -23,11 +23,10 @@ def _get_db_connection(dict_cursor=False):
 def init_db():
     """
     Osigurava da baza i sve tablice postoje i imaju ispravnu shemu.
-    Sama upravlja svojom konekcijom.
     """
     conn = _get_db_connection()
     c = conn.cursor()
-    # Kreiraj tablicu za logove senzora
+    # Kreiraj tablicu za logove senzora, SADA S 'stable' STUPCEM
     c.execute("""
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +37,8 @@ def init_db():
             soil_raw REAL,
             soil_voltage REAL,
             soil_percent REAL,
-            lux REAL
+            lux REAL,
+            stable INTEGER DEFAULT 1
         )
     """)
     # Kreiraj tablicu za događaje releja
@@ -54,36 +54,31 @@ def init_db():
 
     # --- Migracija sheme (ako je potrebno) ---
     c.execute("PRAGMA table_info(logs)")
-    # dohvati imena stupaca (nalaze se na indeksu 1)
     cols = [row[1] for row in c.fetchall()]
 
     if "lux" not in cols:
-        print("[DB] Dodajem stupac 'lux' u tablicu 'logs'...")
         c.execute("ALTER TABLE logs ADD COLUMN lux REAL")
 
-    if "stable" in cols:
-        print("[DB] Uklanjam stari stupac 'stable' iz tablice 'logs'...")
-        # Najsigurniji način za uklanjanje stupca u SQLite-u
-        c.execute("CREATE TABLE logs_new AS SELECT id, timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp, soil_raw, soil_voltage, soil_percent, lux FROM logs")
-        c.execute("DROP TABLE logs")
-        c.execute("ALTER TABLE logs_new RENAME TO logs")
-        print("[DB] Stupac 'stable' uspješno uklonjen.")
+    # VRAĆANJE 'stable' STUPCA ako ne postoji
+    if "stable" not in cols:
+        print("[DB] Dodajem stupac 'stable' u tablicu 'logs'...")
+        c.execute("ALTER TABLE logs ADD COLUMN stable INTEGER DEFAULT 1")
 
     conn.commit()
     conn.close()
 
 # --- Funkcije za rad s logovima senzora ---
 
-def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux):
-    """Upisuje jedan red podataka od senzora u bazu. Sama upravlja konekcijom."""
+def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux, stable):
+    """Upisuje jedan red podataka od senzora u bazu, UKLJUČUJUĆI 'stable'."""
     sql = """
         INSERT INTO logs (timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp,
-                          soil_raw, soil_voltage, soil_percent, lux)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                          soil_raw, soil_voltage, soil_percent, lux, stable)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     conn = _get_db_connection()
     try:
-        conn.execute(sql, (timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux))
+        conn.execute(sql, (timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux, stable))
         conn.commit()
     except sqlite3.Error as e:
         print(f"[DB ERROR] Neuspješan upis u log: {e}")
@@ -164,7 +159,7 @@ def insert_relay_event(relay_name, action, source="unknown"):
         if conn:
             conn.close()
 
-def get_relay_log(limit=10):
+def get_relay_log(limit=15): # OGRANIČENJE JE SADA OVDJE
     """Dohvaća zadnjih N događaja releja."""
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
