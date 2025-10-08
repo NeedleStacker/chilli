@@ -7,6 +7,7 @@ CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
 DB_FILE = os.path.join(BASE_DIR, "sensors.db")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
+PID_FILE = os.path.join(BASE_DIR, "logger.pid")
 LAST_WATERING_FILE = os.path.join(BASE_DIR, "last_watering.txt")
 
 # --- GPIO Pinovi (BCM numeriranje) ---
@@ -21,7 +22,7 @@ BH1750_ADDR = 0x23
 
 # --- Postavke Aplikacije ---
 DEV_MODE = True # Ako je True, senzori vraćaju lažne podatke. Postaviti na False za produkciju.
-LOG_INTERVAL_SECONDS = 10 # Smanjeno radi lakšeg testiranja
+LOG_INTERVAL_SECONDS = 2400 # Vraćeno na 40 minuta
 WATERING_THRESHOLD_PERCENT = 40.0
 WATERING_DURATION_SECONDS = 5
 WATERING_COOLDOWN_SECONDS = 60
