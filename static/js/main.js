@@ -1,4 +1,4 @@
-/* main.js - Ispravljena i poboljšana verzija */
+/* main.js - Vraćena i ispravljena verzija */
 document.addEventListener("DOMContentLoaded", () => {
 
     // ------- DOM Elementi -------
@@ -13,10 +13,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function formatTime(ts) {
         if (!ts) return "";
         const [date, time] = ts.split('_');
-        if (!date || !time) return ts;
-        const [y, m, d] = date.split('-');
-        const [hh, mm] = time.split('-');
-        return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
+        if (!date || !time) return ts.replace('_', ' ');
+        return `${date.split('-').reverse().join('.')} ${time.replace(/-/g, ':')}`;
     }
 
     async function fetchJSON(url, opts = {}) {
@@ -94,10 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function updateRelayUI(data) {
-        if (!data) {
-            console.log("Nema podataka za releje.");
-            return;
-        }
+        if (!data) return;
 
         // Ažuriranje tablice
         relayLogTableBody.innerHTML = '';
@@ -113,10 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Ažuriranje grafikona
         const chartData = data.chart_data;
-        if (!chartData || (!chartData.RELAY1?.length && !chartData.RELAY2?.length)) {
-            console.log("Nema podataka za grafikon releja.");
-            return;
-        }
+        if (!chartData || (!chartData.RELAY1?.length && !chartData.RELAY2?.length)) return;
 
 		const labels = [...new Set([...chartData.RELAY1.map(x => x.t), ...chartData.RELAY2.map(x => x.t)])].sort();
 		const relay1Display = chartData.RELAY1.map(d => d.v ? 1 : 0.05);
@@ -165,7 +157,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ------- GLAVNA FUNKCIJA ZA OSVJEŽAVANJE -------
     async function refreshAllData() {
-        console.log("Osvježavam sve podatke...");
         const logs = await fetchJSON('/api/logs?limit=100');
         if (logs) {
             updateSensorCharts(logs);
@@ -178,18 +169,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         updateLoggerStatus();
-        console.log("Osvježavanje završeno.");
     }
 
     // ------- Event Listeners -------
     document.getElementById('btnStartFirst').addEventListener('click', async () => {
-        await fetchJSON('/api/run/start_first', { method: 'POST' });
-        updateLoggerStatus();
+        const res = await fetchJSON('/api/run/start_first', { method: 'POST' });
+        if (res) updateLoggerStatus();
     });
 
     document.getElementById('btnStop').addEventListener('click', async () => {
-        await fetchJSON('/api/run/stop', { method: 'POST' });
-        updateLoggerStatus();
+        const res = await fetchJSON('/api/run/stop', { method: 'POST' });
+        if (res) updateLoggerStatus();
     });
 
     document.getElementById('btn-relay1').addEventListener('click', () => toggleRelay(1));
@@ -202,6 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // ------- Inicijalno učitavanje -------
+    // ------- Inicijalno učitavanje i periodično osvježavanje -------
     refreshAllData();
+    setInterval(refreshAllData, 5000); // Osvježavanje svakih 5 sekundi
 });
