@@ -87,12 +87,31 @@ def run_logger():
         while True:
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # Očitavanje svih senzora
-            lux = sensors.read_bh1750_lux()
-            soil_raw, soil_voltage = sensors.read_soil_raw()
-            soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
-            air_temp, air_humidity = sensors.test_dht()
-            soil_temp = sensors.read_ds18b20_temp()
+            # --- Očitavanje svih senzora s detaljnim logiranjem grešaka ---
+            try:
+                lux = sensors.read_bh1750_lux()
+            except Exception as e:
+                print(f"[LOGGER-ERROR] Greška pri čitanju BH1750 (svjetlost): {e}")
+                lux = None
+
+            try:
+                soil_raw, soil_voltage = sensors.read_soil_raw()
+                soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
+            except Exception as e:
+                print(f"[LOGGER-ERROR] Greška pri čitanju ADS1115 (vlaga zemlje): {e}")
+                soil_raw, soil_voltage, soil_percent = None, None, None
+
+            try:
+                air_temp, air_humidity = sensors.test_dht()
+            except Exception as e:
+                print(f"[LOGGER-ERROR] Greška pri čitanju DHT22 (zrak): {e}")
+                air_temp, air_humidity = None, None
+
+            try:
+                soil_temp = sensors.read_ds18b20_temp()
+            except Exception as e:
+                print(f"[LOGGER-ERROR] Greška pri čitanju DS18B20 (temp. zemlje): {e}")
+                soil_temp = None
 
             # Zaokruživanje vrijednosti radi čistoće podataka
             air_humidity = round(air_humidity, 2) if air_humidity is not None else None
