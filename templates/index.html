@@ -76,15 +76,9 @@
 				<div class="col-md-7">
 					<div class="row">
 						<div class="col-md-6">
-							<h5 class="mb-2">Pokretanje Logger-a</h5>
-							<div class="d-flex gap-2 mb-2">
-								<button id="btnStartFirst" class="btn btn-success">RUN</button>
-								<button id="btnStop" class="btn btn-danger">STOP</button>
-							</div>
-							<p>
-								<strong>Status:</strong>
-								<span id="loggerStatusTXT" class="fw-bold">Učitavanje...</span>
-							</p>
+							<h5 class="mb-2">Status Logger-a</h5>
+                            <p>Status: <strong id="loggerStatusTXT" class="fw-bold">Učitavanje...</strong></p>
+                            <small class="text-muted">Logger se sada pokreće i zaustavlja ručno u terminalu (`python3 logger.py`).</small>
 						</div>
 						<div class="col-md-6">
 							<h5 class="mb-2">Releji</h5>
@@ -92,7 +86,7 @@
 								<button id="btn-relay1" class="btn btn-outline-warning">Toggle Relej 1</button>
 								<button id="btn-relay2" class="btn btn-outline-warning">Toggle Relej 2</button>
 							</div>
-							<p class="mb-2">STATUS Relej1: <span id="relay1State">{{ 'ON' if relay1 else 'OFF' }}</span>, Relej2: <span id="relay2State">{{ 'ON' if relay2 else 'OFF' }}</span>
+							<p class="mb-2">STATUS Relej1: <span id="relay1State">Učitavanje...</span>, Relej2: <span id="relay2State">Učitavanje...</span>
 							</p>
 						</div>
 					</div>
