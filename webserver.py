@@ -212,17 +212,38 @@ def api_relay_toggle():
 
 @app.route("/relay_log_data")
 def relay_log_data():
+    """
+    Vraća podatke za logove releja, formatirane za grafikon i tablicu.
+    """
     log_data = database.get_relay_log(limit=50)
-    transformed_data = {"RELAY1": [], "RELAY2": []}
-    for entry in reversed(log_data):
-        ts = datetime.datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").strftime("%H:%M:%S")
-        item = {"t": ts, "v": 1 if entry['action'] == 'ON' else 0}
-        if entry['relay_name'] == 'RELAY1':
-            transformed_data['RELAY1'].append(item)
-        elif entry['relay_name'] == 'RELAY2':
-            transformed_data['RELAY2'].append(item)
 
-    return jsonify(transformed_data)
+    chart_data = {"RELAY1": [], "RELAY2": []}
+    table_data = []
+
+    # Kreiraj podatke za tablicu (najnoviji na vrhu)
+    for entry in log_data:
+        table_entry = {
+            "t": datetime.datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S"),
+            "relay": entry['relay_name'],
+            "action": entry['action'],
+            "source": entry['source'],
+            "v": 1 if entry['action'] == 'ON' else 0
+        }
+        table_data.append(table_entry)
+
+    # Kreiraj podatke za grafikon (zahtijevaju kronološki poredak)
+    for entry in reversed(log_data):
+        chart_ts = datetime.datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").strftime("%H:%M:%S")
+        chart_item = {"t": chart_ts, "v": 1 if entry['action'] == 'ON' else 0}
+        if entry['relay_name'] == 'RELAY1':
+            chart_data['RELAY1'].append(chart_item)
+        elif entry['relay_name'] == 'RELAY2':
+            chart_data['RELAY2'].append(chart_item)
+
+    return jsonify({
+        "chart_data": chart_data,
+        "table_data": table_data
+    })
 
 @app.route("/logs/file")
 def get_logfile():

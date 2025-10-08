@@ -1,530 +1,207 @@
-/* main.js - glavni JS logika za index.html */
-/* Ovaj fajl mora se učitati nakon Chart.js (CDN) i nakon što su HTML elementi u DOM-u. */
-
+/* main.js - Ispravljena i poboljšana verzija */
 document.addEventListener("DOMContentLoaded", () => {
 
-	// ------- helperi -------
-	function formatTime(ts) {
-		if (!ts) return "";
-		const [date, time] = ts.split('_');
-		if (!date || !time) return ts;
-		const [y, m, d] = date.split('-');
-		const [hh, mm] = time.split('-');
-		return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
-	}
+    // ------- DOM Elementi -------
+    const loggerStatusEl = document.getElementById('loggerStatusTXT');
+    const relay1StateEl = document.getElementById('relay1State');
+    const relay2StateEl = document.getElementById('relay2State');
+    const sensorOutputEl = document.getElementById('sensorOutput');
+    const logsTableBody = document.getElementById('logsBody');
+    const relayLogTableBody = document.querySelector('#relayLogTable tbody');
 
-	async function fetchJSON(url, opts) {
-		const r = await fetch(url, opts);
-		return await r.json();
-	}
+    // ------- HELPERI -------
+    function formatTime(ts) {
+        if (!ts) return "";
+        const [date, time] = ts.split('_');
+        if (!date || !time) return ts;
+        const [y, m, d] = date.split('-');
+        const [hh, mm] = time.split('-');
+        return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
+    }
 
-	// ------- Chart background plugin -------
-	const chartAreaBackgroundPlugin = {
-		id: 'chartAreaBackground',
-		beforeDraw(chart, args, options) {
-			const {
-				ctx,
-				chartArea
-			} = chart;
-			ctx.save();
-			ctx.fillStyle = options.color || 'white';
-			ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
-			ctx.restore();
-		}
-	};
+    async function fetchJSON(url, opts = {}) {
+        try {
+            const response = await fetch(url, opts);
+            if (!response.ok) {
+                console.error(`Greška pri dohvaćanju ${url}: ${response.status}`);
+                return null;
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`Mrežna greška za ${url}:`, error);
+            return null;
+        }
+    }
 
-	// ------- inicijalizacija chartova -------
-	const ctxTemp = document.getElementById('tempChart').getContext('2d');
-	const tempChart = new Chart(ctxTemp, {
-		type: 'line',
-		data: {
-			labels: [],
-			datasets: [{
-					label: 'Air Temp °C',
-					borderColor: 'rgba(0,123,255,1)',
-					backgroundColor: 'rgba(0,123,255,0.1)',
-					data: [],
-					fill: true,
-					tension: 0.2
-				},
-				{
-					label: 'Soil Temp °C',
-					borderColor: 'rgba(40,167,69,1)',
-					backgroundColor: 'rgba(40,167,69,0.1)',
-					data: [],
-					fill: true,
-					tension: 0.2
-				}
-			]
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: {
-				mode: 'index',
-				intersect: false
-			},
-			scales: {
-				y: {
-					min: 0,
-					max: 50
-				}
-			},
-			plugins: {
-				chartAreaBackground: {
-					color: 'lavender'
-				}
-			}
-		},
-		plugins: [chartAreaBackgroundPlugin]
-	});
+    // ------- Inicijalizacija Chartova -------
+    function createChart(elementId, datasets, yAxisOptions = {}) {
+        const ctx = document.getElementById(elementId).getContext('2d');
+        return new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: { y: yAxisOptions },
+            }
+        });
+    }
 
-	const ctxHum = document.getElementById('humChart').getContext('2d');
-	const humChart = new Chart(ctxHum, {
-		type: 'line',
-		data: {
-			labels: [],
-			datasets: [{
-				label: 'Air Humidity %',
-				borderColor: 'rgba(255,165,0,1)',
-				backgroundColor: 'rgba(255,165,0,0.15)',
-				data: [],
-				fill: true,
-				tension: 0.2
-			}]
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: {
-				mode: 'index',
-				intersect: false
-			},
-			scales: {
-				y: {
-					min: 0,
-					max: 100
-				}
-			},
-			plugins: {
-				chartAreaBackground: {
-					color: 'honeydew'
-				}
-			}
-		},
-		plugins: [chartAreaBackgroundPlugin]
-	});
-
-	const ctxSoil = document.getElementById('soilChart').getContext('2d');
-	const soilChart = new Chart(ctxSoil, {
-		type: 'line',
-		data: {
-			labels: [],
-			datasets: [{
-				label: 'Soil %',
-				borderColor: 'rgba(139,69,19,1)',
-				backgroundColor: 'rgba(139,69,19,0.15)',
-				data: [],
-				fill: true,
-				tension: 0.2
-			}]
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: {
-				mode: 'index',
-				intersect: false
-			},
-			scales: {
-				y: {
-					min: 0,
-					max: 100
-				}
-			},
-			plugins: {
-				chartAreaBackground: {
-					color: 'mistyrose'
-				}
-			}
-		},
-		plugins: [chartAreaBackgroundPlugin]
-	});
-
-	const ctxLux = document.getElementById('luxChart').getContext('2d');
-	const luxChart = new Chart(ctxLux, {
-		type: 'line',
-		data: {
-			labels: [],
-			datasets: [{
-				label: 'Lux (lx)',
-				borderColor: 'rgba(128,0,128,1)',
-				backgroundColor: 'rgba(128,0,128,0.1)',
-				data: [],
-				fill: true,
-				tension: 0.2
-			}]
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: {
-				mode: 'index',
-				intersect: false
-			},
-			scales: {
-				y: {
-					beginAtZero: true
-				}
-			},
-			plugins: {
-				chartAreaBackground: {
-					color: 'lavender'
-				}
-			}
-		},
-		plugins: [chartAreaBackgroundPlugin]
-	});
+    const tempChart = createChart('tempChart', [
+        { label: 'Temp. Zraka (°C)', borderColor: '#007bff', data: [] },
+        { label: 'Temp. Zemlje (°C)', borderColor: '#28a745', data: [] }
+    ]);
+    const humChart = createChart('humChart', [{ label: 'Vlaga Zraka (%)', borderColor: '#ffc107', data: [] }]);
+    const soilChart = createChart('soilChart', [{ label: 'Vlaga Zemlje (%)', borderColor: '#8B4513', data: [] }]);
+    const luxChart = createChart('luxChart', [{ label: 'Svjetlost (lx)', borderColor: '#800080', data: [] }]);
+    let relayChart = null;
 
 
-	// ------- Grafikon paljenja/gasenja releja (signal) -------
-	let relayChart = null;
-	async function loadRelayChart() {
-		const res = await fetch('/relay_log_data');
-		const data = await res.json();
+    // ------- Funkcije za Ažuriranje Sučelja -------
 
-		if (!data || (!data.RELAY1?.length && !data.RELAY2?.length)) return;
+    function updateSensorCharts(logs) {
+        const labels = logs.map(r => formatTime(r.timestamp));
+        tempChart.data.labels = labels;
+        humChart.data.labels = labels;
+        soilChart.data.labels = labels;
+        luxChart.data.labels = labels;
 
-		const labels = [...new Set([
-			...data.RELAY1.map(x => x.t),
-			...data.RELAY2.map(x => x.t)
-		])].sort();
+        tempChart.data.datasets[0].data = logs.map(r => r.dht22_air_temp);
+        tempChart.data.datasets[1].data = logs.map(r => r.ds18b20_soil_temp);
+        humChart.data.datasets[0].data = logs.map(r => r.dht22_humidity);
+        soilChart.data.datasets[0].data = logs.map(r => r.soil_percent);
+        luxChart.data.datasets[0].data = logs.map(r => r.lux);
 
-		const relay1 = data.RELAY1.map(d => d.v);
-		const relay2 = data.RELAY2.map(d => d.v);
+        [tempChart, humChart, soilChart, luxChart].forEach(c => c.update());
+    }
 
-		const offset = 0.05;
-		const relay1Display = relay1.map(v => v ? 1 : offset);
-		const relay2Display = relay2.map(v => v ? 0.5 : 0.5 - offset);
+    function updateLogsTable(logs) {
+        logsTableBody.innerHTML = "";
+        for (let i = logs.length - 1; i >= 0; i--) {
+            const r = logs[i];
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${r.id}</td>
+                <td>${formatTime(r.timestamp)}</td>
+                <td>${r.dht22_air_temp ?? ''}</td>
+                <td>${r.dht22_humidity ?? ''}</td>
+                <td>${r.ds18b20_soil_temp ?? ''}</td>
+                <td>${r.soil_percent ?? ''}</td>
+                <td>${r.lux ?? ''}</td>`;
+            logsTableBody.appendChild(tr);
+        }
+    }
 
-		// calc durations for last ON period (best-effort)
-		const calcDuration = (arr) => {
-			if (!arr || !arr.length) return null;
-			// find latest ON index and last OFF before it
-			let lastOnIdx = -1,
-				lastOffIdx = -1;
-			for (let i = arr.length - 1; i >= 0; i--) {
-				if (arr[i].v === 1 && lastOnIdx === -1) lastOnIdx = i;
-				if (arr[i].v === 0 && lastOnIdx !== -1) {
-					lastOffIdx = i;
-					break;
-				}
-			}
-			if (lastOnIdx === -1) return null;
-			// compute seconds difference using today date (HH:MM:SS -> Date)
-			const onTime = arr[lastOnIdx].t;
-			const offTime = lastOffIdx === -1 ? null : arr[lastOffIdx].t;
-			try {
-				const nowDate = new Date();
-				const parseT = (hhmmss) => {
-					const parts = hhmmss.split(':');
-					if (parts.length < 3) return null;
-					const dt = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(),
-						parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]));
-					return dt;
-				};
-				const tOn = parseT(onTime);
-				const tOff = offTime ? parseT(offTime) : null;
-				if (!tOn) return null;
-				const diff = tOff ? (tOn - tOff) / 1000 : (Date.now() - tOn.getTime()) / 1000;
-				return Math.max(0, diff).toFixed(1);
-			} catch (e) {
-				return null;
-			}
-		};
+    function updateRelayUI(data) {
+        if (!data) {
+            console.log("Nema podataka za releje.");
+            return;
+        }
 
-		const d1 = calcDuration(data.RELAY1);
-		const d2 = calcDuration(data.RELAY2);
+        // Ažuriranje tablice
+        relayLogTableBody.innerHTML = '';
+        (data.table_data || []).forEach(entry => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${entry.t}</td>
+                <td>${entry.relay}</td>
+                <td><span class="badge ${entry.v ? 'bg-success' : 'bg-secondary'}">${entry.action}</span></td>
+                <td>${entry.source || 'button'}</td>`;
+            relayLogTableBody.appendChild(tr);
+        });
 
-		const durEl = document.getElementById('relayDurations');
-		if (durEl) {
-			let html = "";
-			if (d1) html += `Relej 1 bio uključen <b>${d1}s</b>`;
-			if (d2) html += (html ? " &nbsp;&nbsp;|&nbsp;&nbsp; " : "") + `Relej 2 bio uključen <b>${d2}s</b>`;
-			durEl.innerHTML = html;
-		}
+        // Ažuriranje grafikona
+        const chartData = data.chart_data;
+        if (!chartData || (!chartData.RELAY1?.length && !chartData.RELAY2?.length)) {
+            console.log("Nema podataka za grafikon releja.");
+            return;
+        }
 
-		if (!relayChart) {
-			const ctx = document.getElementById('relayChart').getContext('2d');
-			relayChart = new Chart(ctx, {
-				type: 'line',
-				data: {
-					labels: labels,
-					datasets: [{
-							label: 'Relej 1',
-							data: relay1Display,
-							borderColor: 'rgb(255, 99, 132)',
-							backgroundColor: 'rgba(255, 99, 132, 0.25)',
-							fill: true,
-							stepped: true,
-							tension: 0,
-							borderWidth: 3
-						},
-						{
-							label: 'Relej 2',
-							data: relay2Display,
-							borderColor: 'rgb(54, 162, 235)',
-							backgroundColor: 'rgba(54, 162, 235, 0.25)',
-							fill: true,
-							stepped: true,
-							tension: 0,
-							borderWidth: 3
-						}
-					]
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: true,
-					aspectRatio: 3,
-					scales: {
-						y: {
-							min: 0,
-							max: 1.2,
-							ticks: {
-								stepSize: 0.5,
-								callback: v => {
-									if (v === 1) return 'Relej 1 ON';
-									if (v === 0.5) return 'Relej 2 ON';
-									return '';
-								}
-							},
-							grid: {
-								color: 'rgba(180,180,180,0.2)'
-							},
-							title: {
-								display: true,
-								text: 'Stanja releja'
-							}
-						},
-						x: {
-							title: {
-								display: true,
-								text: 'Vrijeme'
-							},
-							grid: {
-								color: 'rgba(180,180,180,0.1)'
-							}
-						}
-					},
-					plugins: {
-						legend: {
-							position: 'top'
-						},
-						title: {
-							display: false
-						}
-					}
-				}
-			});
-		} else {
-			relayChart.data.labels = labels;
-			relayChart.data.datasets[0].data = relay1Display;
-			relayChart.data.datasets[1].data = relay2Display;
-			relayChart.update();
-		}
-	} // loadRelayChart
+		const labels = [...new Set([...chartData.RELAY1.map(x => x.t), ...chartData.RELAY2.map(x => x.t)])].sort();
+		const relay1Display = chartData.RELAY1.map(d => d.v ? 1 : 0.05);
+		const relay2Display = chartData.RELAY2.map(d => d.v ? 0.5 : 0.5 - 0.05);
 
+        if (!relayChart) {
+            relayChart = createChart('relayChart', [
+                { label: 'Relej 1', data: relay1Display, borderColor: 'rgb(255, 99, 132)', stepped: true },
+                { label: 'Relej 2', data: relay2Display, borderColor: 'rgb(54, 162, 235)', stepped: true }
+            ], { min: 0, max: 1.2, ticks: { stepSize: 0.5, callback: v => (v === 1 ? 'R1 ON' : (v === 0.5 ? 'R2 ON' : '')) } });
+        }
 
-	// ------- tablica relej logova (sada očekuje array sorted by time) -------
-	async function loadRelayLogTable() {
-		const res = await fetch('/relay_log_data');
-		const data = await res.json();
+        relayChart.data.labels = labels;
+        relayChart.data.datasets[0].data = relay1Display;
+        relayChart.data.datasets[1].data = relay2Display;
+        relayChart.update();
+    }
 
-		const tbody = document.querySelector('#relayLogTable tbody');
-		tbody.innerHTML = '';
+    async function toggleRelay(relayNum) {
+        const stateEl = document.getElementById(`relay${relayNum}State`);
+        const currentState = stateEl.innerText.trim().toUpperCase() === 'ON';
+        const newState = !currentState;
 
-		(data || []).forEach(entry => {
-			const tr = document.createElement('tr');
-			tr.innerHTML = `
-        <td>${entry.t}</td>
-        <td>${entry.relay}</td>
-        <td>
-          <span class="badge ${entry.v ? 'bg-success' : 'bg-secondary'}">
-            ${entry.action}
-          </span>
-        </td>
-        <td>${entry.source || 'button'}</td>
-      `;
-			tbody.appendChild(tr);
-		});
-	}
+        const response = await fetchJSON('/api/relay/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ relay: relayNum, state: newState })
+        });
 
-	window.loadRelayLogTable = loadRelayLogTable; // exposable if needed
+        if (response && response.ok) {
+            stateEl.innerText = newState ? 'ON' : 'OFF';
+            refreshAllData();
+        }
+    }
 
-	// ------- ostali handleri i funkcije -------
-	async function updateChartAndTable() {
-		const rows = await fetchJSON('/api/logs?limit=100');
+    async function updateLoggerStatus() {
+        const data = await fetchJSON('/api/status');
+        if (data && data.status) {
+            loggerStatusEl.innerText = data.status;
+            loggerStatusEl.style.color = data.status.toUpperCase().includes("RUNNING") ? "green" : "red";
+        } else {
+            loggerStatusEl.innerText = "Greška pri dohvaćanju statusa";
+            loggerStatusEl.style.color = "red";
+        }
+    }
 
-		const labels = rows.map(r => formatTime(r.timestamp));
-		const airT = rows.map(r => r.air_temp !== null ? Number(r.air_temp) : null);
-		const airH = rows.map(r => r.air_humidity !== null ? Number(r.air_humidity) : null);
-		const soilT = rows.map(r => r.soil_temp !== null ? Number(r.soil_temp) : null);
-		const soilP = rows.map(r => r.soil_percent !== null ? Number(r.soil_percent) : null);
-		const lux = rows.map(r => r.lux !== null ? Number(r.lux) / 100.0 : null);
+    // ------- GLAVNA FUNKCIJA ZA OSVJEŽAVANJE -------
+    async function refreshAllData() {
+        console.log("Osvježavam sve podatke...");
+        const logs = await fetchJSON('/api/logs?limit=100');
+        if (logs) {
+            updateSensorCharts(logs);
+            updateLogsTable(logs);
+        }
 
-		// tablica logs
-		const tbody = document.getElementById('logsBody');
-		tbody.innerHTML = "";
+        const relayData = await fetchJSON('/relay_log_data');
+        if (relayData) {
+            updateRelayUI(relayData);
+        }
 
-		for (let i = rows.length - 1; i >= 0; i--) {
-			const r = rows[i];
-			const tr = document.createElement('tr');
-			if (r.stable === 0) tr.classList.add('unstable');
-			tr.innerHTML = `
-        <td>${r.id}</td>
-        <td>${formatTime(r.timestamp)}</td>
-        <td>${r.air_temp ?? ''}</td>
-        <td>${r.air_humidity ?? ''}</td>
-        <td>${r.soil_temp ?? ''}</td>
-        <td>${r.soil_percent ?? ''}</td>
-        <td>${r.lux ?? ''}</td>`;
-			tbody.appendChild(tr);
-		}
+        updateLoggerStatus();
+        console.log("Osvježavanje završeno.");
+    }
 
-		tempChart.data.labels = labels;
-		tempChart.data.datasets[0].data = airT;
-		tempChart.data.datasets[1].data = soilT;
-		tempChart.update();
-
-		humChart.data.labels = labels;
-		humChart.data.datasets[0].data = airH;
-		humChart.update();
-
-		soilChart.data.labels = labels;
-		soilChart.data.datasets[0].data = soilP;
-		soilChart.update();
-
-		luxChart.data.labels = labels;
-		luxChart.data.datasets[0].data = lux.map(v => v !== null ? v * 100 : null);
-		luxChart.update();
-	}
-
-	async function readSensor(type) {
-		const r = await fetch(`/api/sensor/read?type=${type}`).then(r => r.json());
-		document.getElementById('sensorOutput').innerText = JSON.stringify(r, null, 2);
-	}
-
-	async function toggleRelay(relay) {
-		const cur = relay === 1 ? document.getElementById('relay1State').innerText === 'ON' : document.getElementById('relay2State').innerText === 'ON';
-		const target = !cur;
-		await fetch('/api/relay/toggle', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				relay: relay,
-				state: target
-			})
-		});
-		document.getElementById('relay1State').innerText = relay === 1 ? (target ? 'ON' : 'OFF') : document.getElementById('relay1State').innerText;
-		document.getElementById('relay2State').innerText = relay === 2 ? (target ? 'ON' : 'OFF') : document.getElementById('relay2State').innerText;
-	}
-
-	async function updateLoggerStatus() {
-		const el = document.getElementById('loggerStatusTXT');
-		try {
-			const data = await fetchJSON('/api/status');
-			el.innerText = data.status;
-			// Provjeri sadrži li status riječ "RUNNING" za bojanje u zeleno
-			if (data.status && data.status.toUpperCase().includes("RUNNING")) {
-				el.style.color = "green";
-			} else {
-				el.style.color = "red";
-			}
-		} catch (e) {
-			el.innerText = "Greška pri dohvaćanju statusa";
-			el.style.color = "red";
-		}
-	}
-
-	// event listeners (button events)
-	document.getElementById('btnStartFirst').addEventListener('click', async () => {
-		const res = await fetch('/api/run/start_first', {
-			method: 'POST'
-		}).then(r => r.json());
-		document.getElementById('loggerStatus').innerText = res.running ? "AKTIVAN" : "STOPIRAN";
-	});
-	document.getElementById('btnStop').addEventListener('click', async () => {
-		const res = await fetch('/api/run/stop', {
-			method: 'POST'
-		}).then(r => r.json());
-		document.getElementById('loggerStatus').innerText = res.running ? "AKTIVAN" : "STOPIRAN";
-	});
-
-	document.getElementById('btnDeleteRows').addEventListener('click', async () => {
-		const input = document.getElementById('deleteIdsInput').value.trim();
-		const statusEl = document.getElementById('deleteStatus');
-
-		if (!input) {
-			statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'.";
-			return;
-		}
-
-		const payload = input.toLowerCase() === "all" ? {
-			ids: "all"
-		} : {
-			ids: input
-		};
-
-		const confirmDelete = confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`);
-		if (!confirmDelete) return;
-
-		try {
-			const res = await fetch('/api/logs/delete', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(payload)
-			});
-			const data = await res.json();
-
-			if (data.ok) {
-				statusEl.innerText = `Obrisano: ${data.deleted === "all" ? "svi redovi" : data.deleted + " redova."}`;
-				await updateChartAndTable(); // osvježi tablicu i grafove
-			} else {
-				statusEl.innerText = `Greška: ${data.msg || data.error}`;
-			}
-		} catch (e) {
-			statusEl.innerText = "Greška pri brisanju: " + e.message;
-		}
-	});
-	
-	document.getElementById('btn-ads').addEventListener('click', function() {
-        readSensor('ads');
+    // ------- Event Listeners -------
+    document.getElementById('btnStartFirst').addEventListener('click', async () => {
+        await fetchJSON('/api/run/start_first', { method: 'POST' });
+        updateLoggerStatus();
     });
-    document.getElementById('btn-dht').addEventListener('click', function() {
-        readSensor('dht');
-    });
-    document.getElementById('btn-ds18b20').addEventListener('click', function() {
-        readSensor('ds18b20');
-    });
-    document.getElementById('btn-bh1750').addEventListener('click', function() {
-        readSensor('bh1750');
-    });
-	document.getElementById('btn-relay1').addEventListener('click', function () {
-	toggleRelay(1);
-	});
 
-	document.getElementById('btn-relay2').addEventListener('click', function () {
-		toggleRelay(2);
-	});
+    document.getElementById('btnStop').addEventListener('click', async () => {
+        await fetchJSON('/api/run/stop', { method: 'POST' });
+        updateLoggerStatus();
+    });
 
-	// učitaj stvari jednom nakon DOMContentLoaded
-	updateLoggerStatus();
+    document.getElementById('btn-relay1').addEventListener('click', () => toggleRelay(1));
+    document.getElementById('btn-relay2').addEventListener('click', () => toggleRelay(2));
 
-	updateChartAndTable();
-	window.loadRelayLogTable();
-	loadRelayChart();
-}); /* DOMContentLoaded */
+    ['ads', 'dht', 'ds18b20', 'bh1750'].forEach(type => {
+        document.getElementById(`btn-${type}`).addEventListener('click', async () => {
+            const r = await fetchJSON(`/api/sensor/read?type=${type}`);
+            sensorOutputEl.innerText = JSON.stringify(r, null, 2);
+        });
+    });
+
+    // ------- Inicijalno učitavanje -------
+    refreshAllData();
+});
