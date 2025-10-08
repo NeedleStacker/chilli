@@ -10,7 +10,7 @@ import hardware
 import relays
 import sensors
 import database
-from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
+from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE, PID_FILE
 
 # Flask
 from flask import Flask, render_template, jsonify, request
@@ -28,12 +28,22 @@ logger_process = None
 logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
 def is_logger_running():
-    """Provjerava radi li logger.py podproces."""
-    global logger_process
-    if logger_process and logger_process.poll() is None:
+    """Provjerava radi li logger.py podproces čitanjem PID datoteke."""
+    if not os.path.exists(PID_FILE):
+        return False
+    try:
+        with open(PID_FILE, 'r') as f:
+            pid = int(f.read().strip())
+        # Provjera postoji li proces s tim PID-om.
+        # os.kill(pid, 0) baca OSError ako proces ne postoji.
+        os.kill(pid, 0)
         return True
-    logger_process = None
-    return False
+    except (OSError, ValueError):
+        # Ako proces ne postoji ili PID datoteka nije ispravna,
+        # smatramo da logger nije pokrenut i brišemo datoteku.
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+        return False
 
 def start_logger():
     """Pokreće logger.py kao podproces."""
