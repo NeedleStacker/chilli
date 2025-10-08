@@ -18,9 +18,6 @@ def client():
     app.config['TESTING'] = True
     app.config['DATABASE'] = db_path
 
-    # Set DEV_MODE to True for tests to avoid hardware dependencies
-    app.config['DEV_MODE'] = True
-
     with app.test_client() as client:
         with app.app_context():
             # Initialize the temporary database
