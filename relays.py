@@ -1,6 +1,19 @@
-import RPi.GPIO as GPIO
+from config import DEV_MODE, RELAY1, RELAY2
+
+if not DEV_MODE:
+    try:
+        import RPi.GPIO as GPIO
+    except (ImportError, RuntimeError):
+        print("[CRITICAL] Nije moguće uvesti RPi.GPIO. Pokrećete li na Raspberry Pi-ju?")
+        # Postavi lažni GPIO da se aplikacija ne sruši
+        class FakeGPIO:
+            def __getattr__(self, name):
+                def method(*args, **kwargs):
+                    print(f"Pozvana lažna GPIO metoda: {name}({args}, {kwargs})")
+                return method
+        GPIO = FakeGPIO()
+
 import time
-from config import RELAY1, RELAY2
 
 def set_relay_state(relay_pin, state):
     """
@@ -8,18 +21,24 @@ def set_relay_state(relay_pin, state):
     Args:
         relay_pin (int): GPIO pin releja.
         state (bool): True za ON (uključeno), False za OFF (isključeno).
-                      Logika je za LOW-trigger releje.
     """
+    if DEV_MODE:
+        print(f"[DEV_MODE] Relej na pinu {relay_pin} postavljen na {'ON' if state else 'OFF'}")
+        return
+
+    # Logika za LOW-trigger releje
     GPIO.output(relay_pin, GPIO.LOW if state else GPIO.HIGH)
 
 def get_relay_state(relay_pin):
     """
     Provjerava stanje određenog releja.
-    Args:
-        relay_pin (int): GPIO pin releja.
     Returns:
         bool: True ako je relej ON (uključen), inače False.
     """
+    if DEV_MODE:
+        # U DEV_MODE, pretpostavimo da su releji uvijek isključeni
+        return False
+
     # Za LOW-trigger relej, stanje je ON (True) kada je GPIO pin na LOW (0).
     return GPIO.input(relay_pin) == GPIO.LOW
 

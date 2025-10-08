@@ -1,41 +1,47 @@
-import board
-import busio
-import RPi.GPIO as GPIO
 import os
+from config import DEV_MODE, RELAY1, RELAY2
 
-# Import pinova i postavki iz glavne konfiguracije
-from config import RELAY1, RELAY2, DHT_PIN
+# Uvezi hardverske biblioteke samo ako nismo u razvojnom modu
+if not DEV_MODE:
+    try:
+        import board
+        import busio
+        import RPi.GPIO as GPIO
+    except (ImportError, RuntimeError) as e:
+        print(f"[CRITICAL] Nije moguće uvesti hardverske biblioteke: {e}")
+        print("Aplikacija se ne može pokrenuti bez hardverskih ovisnosti. Jeste li u DEV_MODE?")
+        # U stvarnom scenariju, ovdje bi trebalo prekinuti izvođenje
+        # sys.exit(1)
 
 # Globalna varijabla za I2C, kako bi je drugi moduli mogli koristiti
 i2c = None
 
-def initialize(app_mode='main'):
+def initialize():
     """
     Centralna funkcija za inicijalizaciju hardvera.
-    'main' mode: za logger ili webserver koji koriste sve komponente.
-    'util': za skripte koje ne trebaju sve (npr. samo GPIO).
+    Preskače sve ako je DEV_MODE uključen.
     """
     global i2c
     print("[HARDWARE] Inicijalizacija hardvera...")
 
+    if DEV_MODE:
+        print("[HARDWARE] DEV_MODE je UKLJUČEN. Preskačem stvarnu inicijalizaciju hardvera.")
+        return
+
     # --- GPIO ---
-    # Koristi se BCM numeriranje pinova
     GPIO.setmode(GPIO.BCM)
 
     # --- Releji ---
-    # Postavi pinove kao izlazne i ugasi ih (LOW-trigger releji su OFF na HIGH)
     GPIO.setup(RELAY1, GPIO.OUT, initial=GPIO.HIGH)
     GPIO.setup(RELAY2, GPIO.OUT, initial=GPIO.HIGH)
     print(f"[HARDWARE] Releji {RELAY1}, {RELAY2} postavljeni kao OUT, stanje: OFF.")
 
     # --- DS18B20 ---
-    # Učitaj module kernela potrebne za 1-Wire
     os.system('modprobe w1-gpio')
     os.system('modprobe w1-therm')
     print("[HARDWARE] 1-Wire moduli (w1-gpio, w1-therm) učitani.")
 
     # --- I2C ---
-    # Inicijaliziraj I2C sabirnicu samo jednom
     if i2c is None:
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
@@ -49,7 +55,9 @@ def initialize(app_mode='main'):
 
 def cleanup():
     """
-    Čisti GPIO resurse. Pozvati na kraju izvođenja programa.
+    Čisti GPIO resurse. Preskače ako je DEV_MODE uključen.
     """
+    if DEV_MODE:
+        return
     print("[HARDWARE] Čišćenje GPIO resursa.")
     GPIO.cleanup()
