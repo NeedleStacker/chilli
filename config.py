@@ -10,17 +10,18 @@ STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
 LAST_WATERING_FILE = os.path.join(BASE_DIR, "last_watering.txt")
 
 # --- GPIO Pinovi (BCM numeriranje) ---
-RELAY1 = 12  # IN1 pin za relej pumpe
-RELAY2 = 16  # IN2 pin za relej svjetla (ili drugi)
-DHT_PIN = 27 # Data pin za DHT22 senzor
+RELAY1 = 12
+RELAY2 = 16
+DHT_PIN = 27
 
 # --- Senzori - Tipovi i adrese ---
 DHT_SENSOR = Adafruit_DHT.DHT22
-W1_BASE_DIR = '/sys/bus/w1/devices/' # Bazni direktorij za 1-Wire uređaje
-BH1750_ADDR = 0x23 # I2C adresa za BH1750 (ili 0x5C)
+W1_BASE_DIR = '/sys/bus/w1/devices/'
+BH1750_ADDR = 0x23
 
 # --- Postavke Aplikacije ---
-LOG_INTERVAL_SECONDS = 2400 # Interval logiranja (40 minuta)
-WATERING_THRESHOLD_PERCENT = 40.0 # Prag vlažnosti za automatsko zalijevanje
-WATERING_DURATION_SECONDS = 10 # Trajanje zalijevanja u sekundama
-WATERING_COOLDOWN_SECONDS = 3600 # Vrijeme mirovanja nakon zalijevanja (1 sat)
+DEV_MODE = True # Ako je True, senzori vraćaju lažne podatke. Postaviti na False za produkciju.
+LOG_INTERVAL_SECONDS = 10 # Smanjeno radi lakšeg testiranja
+WATERING_THRESHOLD_PERCENT = 40.0
+WATERING_DURATION_SECONDS = 5
+WATERING_COOLDOWN_SECONDS = 60

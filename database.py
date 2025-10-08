@@ -13,7 +13,7 @@ def _dict_factory(cursor, row):
 
 def _get_db_connection(dict_cursor=False):
     """Vraća konekciju na bazu. Opcionalno koristi dict_factory."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     if dict_cursor:
         conn.row_factory = _dict_factory
     return conn
@@ -26,7 +26,6 @@ def init_db():
     """
     conn = _get_db_connection()
     c = conn.cursor()
-    # Kreiraj tablicu za logove senzora, SADA S 'stable' STUPCEM
     c.execute("""
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +40,6 @@ def init_db():
             stable INTEGER DEFAULT 1
         )
     """)
-    # Kreiraj tablicu za događaje releja
     c.execute("""
         CREATE TABLE IF NOT EXISTS relay_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,16 +50,11 @@ def init_db():
         )
     """)
 
-    # --- Migracija sheme (ako je potrebno) ---
     c.execute("PRAGMA table_info(logs)")
     cols = [row[1] for row in c.fetchall()]
-
     if "lux" not in cols:
         c.execute("ALTER TABLE logs ADD COLUMN lux REAL")
-
-    # VRAĆANJE 'stable' STUPCA ako ne postoji
     if "stable" not in cols:
-        print("[DB] Dodajem stupac 'stable' u tablicu 'logs'...")
         c.execute("ALTER TABLE logs ADD COLUMN stable INTEGER DEFAULT 1")
 
     conn.commit()
@@ -70,7 +63,7 @@ def init_db():
 # --- Funkcije za rad s logovima senzora ---
 
 def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux, stable):
-    """Upisuje jedan red podataka od senzora u bazu, UKLJUČUJUĆI 'stable'."""
+    """Upisuje jedan red podataka od senzora u bazu."""
     sql = """
         INSERT INTO logs (timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp,
                           soil_raw, soil_voltage, soil_percent, lux, stable)
@@ -86,7 +79,6 @@ def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_volt
         conn.close()
 
 def get_logs(limit=100, order="ASC"):
-    """Dohvaća zadane logove, sortirane po ID-u."""
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     order_clause = "DESC" if order.upper() == "DESC" else "ASC"
@@ -96,7 +88,6 @@ def get_logs(limit=100, order="ASC"):
     return rows
 
 def get_logs_where(where_clause, params=[]):
-    """Dohvaća logove koji zadovoljavaju dinamički, ali siguran WHERE uvjet."""
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     query = "SELECT * FROM logs"
@@ -115,36 +106,57 @@ def get_logs_where(where_clause, params=[]):
     return rows
 
 def delete_logs_by_id(ids):
-    """Briše logove na temelju liste ili stringa ID-eva."""
+    """Briše logove na temelju liste ID-eva, stringa 'all', ili stringa s rasponima."""
     if not ids:
         return False, "Nema ID-eva za brisanje."
 
-    try:
-        if isinstance(ids, str):
-            id_list = [int(x.strip()) for x in ids.split(',') if x.strip().isdigit()]
-        elif isinstance(ids, list):
-            id_list = [int(x) for x in ids]
-        else:
-            return False, "Neispravan format ID-eva."
-    except ValueError:
-        return False, "ID-evi moraju biti brojevi."
-
-    if not id_list:
-        return False, "Nema valjanih ID-eva za brisanje."
-
     conn = _get_db_connection()
     c = conn.cursor()
-    placeholders = ",".join("?" for _ in id_list)
-    c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
-    deleted_count = c.rowcount
-    conn.commit()
-    conn.close()
-    return True, f"Obrisano {deleted_count} zapisa."
+
+    try:
+        if isinstance(ids, str) and ids.lower().strip() == 'all':
+            c.execute("DELETE FROM logs")
+            c.execute("DELETE FROM sqlite_sequence WHERE name='logs'")
+            deleted_count_str = "svi"
+        else:
+            id_list = []
+            if isinstance(ids, list):
+                 id_list = [int(x) for x in ids]
+            elif isinstance(ids, str):
+                for part in ids.split(','):
+                    part = part.strip()
+                    if '-' in part:
+                        start, end = map(int, part.split('-'))
+                        id_list.extend(range(start, end + 1))
+                    elif part.isdigit():
+                        id_list.append(int(part))
+            else:
+                conn.close()
+                return False, "Neispravan format ID-eva."
+
+            if not id_list:
+                conn.close()
+                return False, "Nema valjanih ID-eva za brisanje."
+
+            placeholders = ",".join("?" for _ in id_list)
+            c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
+            deleted_count_str = f"{c.rowcount}"
+
+        conn.commit()
+        return True, f"Obrisano {deleted_count_str} zapisa."
+    except ValueError:
+        conn.close()
+        return False, "ID-evi moraju biti brojevi."
+    except Exception as e:
+        conn.close()
+        return False, f"Greška u bazi: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 # --- Funkcije za rad s logovima releja ---
 
 def insert_relay_event(relay_name, action, source="unknown"):
-    """Upisuje ON/OFF događaj releja u bazu s detaljnim logiranjem."""
     conn = None
     try:
         conn = _get_db_connection()
@@ -159,8 +171,7 @@ def insert_relay_event(relay_name, action, source="unknown"):
         if conn:
             conn.close()
 
-def get_relay_log(limit=15): # OGRANIČENJE JE SADA OVDJE
-    """Dohvaća zadnjih N događaja releja."""
+def get_relay_log(limit=15):
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     c.execute("SELECT * FROM relay_log ORDER BY id DESC LIMIT ?", (limit,))
@@ -171,7 +182,6 @@ def get_relay_log(limit=15): # OGRANIČENJE JE SADA OVDJE
 # --- Funkcije za administraciju (za manage.py) ---
 
 def get_sql_data():
-    """Ispisuje sve retke iz 'logs' tablice na konzolu."""
     conn = _get_db_connection(dict_cursor=True)
     rows = conn.execute("SELECT * FROM logs ORDER BY id").fetchall()
     conn.close()
@@ -179,7 +189,6 @@ def get_sql_data():
         print(dict(row))
 
 def delete_sql_data(ids=None, delete_all=False):
-    """Briše podatke iz 'logs' tablice (namijenjeno za CLI)."""
     conn = _get_db_connection()
     c = conn.cursor()
 
