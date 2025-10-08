@@ -65,19 +65,20 @@ def run_logger():
         with open(STATUS_FILE, "w") as f:
             f.write(f"RUNNING @ {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})")
 
-        # ... (Ostatak logike za očitavanje i upis ostaje isti) ...
-        try: lux = sensors.read_bh1750_lux()
-        except Exception as e: print(f"[ERROR] BH1750: {e}"); lux = None
-        try:
-            soil_raw, soil_voltage = sensors.read_soil_raw()
-            soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
-        except Exception as e: print(f"[ERROR] ADS1115: {e}"); soil_raw, soil_voltage, soil_percent = None, None, None
-        try: air_temp, air_humidity = sensors.test_dht()
-        except Exception as e: print(f"[ERROR] DHT22: {e}"); air_temp, air_humidity = None, None
-        try: soil_temp = sensors.read_ds18b20_temp()
-        except Exception as e: print(f"[ERROR] DS18B20: {e}"); soil_temp = None
+        # Očitavanje senzora s novom, otpornijom logikom iz sensors.py
+        lux = sensors.read_bh1750_lux()
+        soil_raw, soil_voltage = sensors.read_soil_raw()
+        air_temp, air_humidity = sensors.test_dht()
+        soil_temp = sensors.read_ds18b20_temp()
 
-        stable_flag = 1
+        # Izračunaj postotak vlažnosti samo ako je očitavanje napona uspjelo
+        if soil_voltage is not None:
+            soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
+        else:
+            soil_percent = None
+
+        # Provjera jesu li sva očitanja uspjela
+        stable_flag = 1 if all(v is not None for v in [lux, soil_voltage, air_temp, soil_temp]) else 0
         database.insert_log(
             datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
             round(air_temp, 2) if air_temp is not None else None,

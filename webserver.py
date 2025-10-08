@@ -171,24 +171,34 @@ def api_logs_delete():
 @app.route("/api/sensor/read", methods=["GET"])
 def api_sensor_read():
     sensor_type = request.args.get("type", "all")
-    try:
-        if sensor_type == "ads":
-            raw, voltage = sensors.read_soil_raw()
+
+    if sensor_type == "ads":
+        raw, voltage = sensors.read_soil_raw()
+        if raw is not None and voltage is not None:
             percent = sensors.read_soil_percent_from_voltage(voltage)
             return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": percent})
-        elif sensor_type == "dht":
-            temp, hum = sensors.test_dht()
+        else:
+            return jsonify({"error": "Neuspješno očitavanje ADS senzora."}), 500
+    elif sensor_type == "dht":
+        temp, hum = sensors.test_dht()
+        if temp is not None and hum is not None:
             return jsonify({"type": "dht", "temperature": temp, "humidity": hum})
-        elif sensor_type == "ds18b20":
-            temp = sensors.read_ds18b20_temp()
+        else:
+            return jsonify({"error": "Neuspješno očitavanje DHT senzora."}), 500
+    elif sensor_type == "ds18b20":
+        temp = sensors.read_ds18b20_temp()
+        if temp is not None:
             return jsonify({"type": "ds18b20", "temperature": temp})
-        elif sensor_type == "bh1750":
-            lux = sensors.read_bh1750_lux()
+        else:
+            return jsonify({"error": "Neuspješno očitavanje DS18B20 senzora."}), 500
+    elif sensor_type == "bh1750":
+        lux = sensors.read_bh1750_lux()
+        if lux is not None:
             return jsonify({"type": "bh1750", "lux": lux})
         else:
-            return jsonify({"error": "Nepoznat tip senzora"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Neuspješno očitavanje BH1750 senzora."}), 500
+    else:
+        return jsonify({"error": "Nepoznat tip senzora"}), 400
 
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():

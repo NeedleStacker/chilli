@@ -21,7 +21,7 @@ W1_BASE_DIR = '/sys/bus/w1/devices/'
 BH1750_ADDR = 0x23
 
 # --- Postavke Aplikacije ---
-DEV_MODE = True # Ako je True, senzori vraćaju lažne podatke. Postaviti na False za produkciju.
+DEV_MODE = False # Ako je True, senzori vraćaju lažne podatke. Postaviti na False za produkciju.
 LOG_INTERVAL_SECONDS = 2400 # Vraćeno na 40 minuta
 WATERING_THRESHOLD_PERCENT = 40.0
 WATERING_DURATION_SECONDS = 5
