@@ -149,13 +149,20 @@ def delete_logs_by_id(ids):
 # --- Funkcije za rad s logovima releja ---
 
 def insert_relay_event(relay_name, action, source="unknown"):
-    """Upisuje ON/OFF događaj releja u bazu."""
-    conn = _get_db_connection()
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sql = "INSERT INTO relay_log (timestamp, relay_name, action, source) VALUES (?, ?, ?, ?)"
-    conn.execute(sql, (ts, relay_name, action, source))
-    conn.commit()
-    conn.close()
+    """Upisuje ON/OFF događaj releja u bazu s detaljnim logiranjem."""
+    conn = None
+    try:
+        conn = _get_db_connection()
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sql = "INSERT INTO relay_log (timestamp, relay_name, action, source) VALUES (?, ?, ?, ?)"
+        conn.execute(sql, (ts, relay_name, action, source))
+        conn.commit()
+        print(f"[DB] Uspješno zabilježen događaj za {relay_name}: {action}")
+    except sqlite3.Error as e:
+        print(f"[DB ERROR] Neuspješan upis događaja za relej: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def get_relay_log(limit=10):
     """Dohvaća zadnjih N događaja releja."""
