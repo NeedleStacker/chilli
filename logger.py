@@ -9,17 +9,15 @@ import database
 import sensors
 from relays import set_relay_state
 from config import (
-    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE, PID_FILE,
+    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE,
     LOG_INTERVAL_SECONDS, WATERING_THRESHOLD_PERCENT,
     WATERING_DURATION_SECONDS, WATERING_COOLDOWN_SECONDS,
     RELAY1
 )
 
 def cleanup():
-    """Čisti PID i statusne datoteke."""
-    print("Čistim PID i status datoteke...")
-    if os.path.exists(PID_FILE):
-        os.remove(PID_FILE)
+    """Čisti statusnu datoteku pri gašenju."""
+    print("Čistim status datoteku...")
     if os.path.exists(STATUS_FILE):
         os.remove(STATUS_FILE)
 
@@ -67,9 +65,6 @@ def perform_watering():
 def run_logger():
     """Glavna petlja za periodično očitavanje senzora i upis u bazu."""
     pid = os.getpid()
-    with open(PID_FILE, "w") as f:
-        f.write(str(pid))
-
     print(f"Logger se pokreće s PID: {pid}...")
     database.init_db()
     os.makedirs(LOGS_DIR, exist_ok=True)
@@ -106,6 +101,7 @@ def run_logger():
             )
             print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Zapis spremljen.")
 
+            # Automatsko zalijevanje je privremeno isključeno
             # if should_water(soil_percent):
             #     perform_watering()
 
