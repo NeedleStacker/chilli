@@ -7,6 +7,7 @@ CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
 DB_FILE = os.path.join(BASE_DIR, "sensors.db")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
+PID_FILE = os.path.join(BASE_DIR, "logger.pid") # Datoteka za čuvanje Process ID-a
 LAST_WATERING_FILE = os.path.join(BASE_DIR, "last_watering.txt")
 
 # --- GPIO Pinovi (BCM numeriranje) ---
