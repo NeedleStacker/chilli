@@ -11,7 +11,7 @@ import database
 import sensors
 from relays import set_relay_state
 from config import (
-    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE,
+    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE, PID_FILE,
     LOG_INTERVAL_SECONDS, WATERING_THRESHOLD_PERCENT,
     WATERING_DURATION_SECONDS, WATERING_COOLDOWN_SECONDS,
     RELAY1
@@ -19,7 +19,9 @@ from config import (
 
 def cleanup():
     """Funkcija za čišćenje koja se poziva pri izlasku iz programa."""
-    print("Čistim status datoteku...")
+    print("Čistim PID i status datoteke...")
+    if os.path.exists(PID_FILE):
+        os.remove(PID_FILE)
     if os.path.exists(STATUS_FILE):
         os.remove(STATUS_FILE)
 
@@ -33,41 +35,28 @@ atexit.register(cleanup)
 signal.signal(signal.SIGTERM, handle_signal)
 signal.signal(signal.SIGINT, handle_signal)
 
-
-def should_water(soil_percent):
-    """Provjerava treba li pokrenuti automatsko zalijevanje."""
-    if soil_percent is None: return False
-    if soil_percent >= WATERING_THRESHOLD_PERCENT: return False
-    if os.path.exists(LAST_WATERING_FILE):
+def check_if_already_running():
+    """Provjerava postoji li već aktivan logger proces."""
+    if os.path.exists(PID_FILE):
         try:
-            with open(LAST_WATERING_FILE, "r") as f: last_ts = float(f.read().strip())
-            if time.time() - last_ts < WATERING_COOLDOWN_SECONDS:
-                return False
-        except (ValueError, IOError):
-            pass
-    return True
-
-
-def perform_watering():
-    """Aktivira relej pumpe za vodu i bilježi vrijeme."""
-    print(f"[AUTO] Uključujem pumpu na {WATERING_DURATION_SECONDS}s ...")
-    try:
-        set_relay_state(RELAY1, True)
-        database.insert_relay_event("RELAY1", "ON", source="auto")
-        time.sleep(WATERING_DURATION_SECONDS)
-    finally:
-        set_relay_state(RELAY1, False)
-        database.insert_relay_event("RELAY1", "OFF", source="auto")
-    try:
-        with open(LAST_WATERING_FILE, "w") as f: f.write(str(time.time()))
-    except IOError as e:
-        print(f"[ERROR] Nije moguće zapisati vrijeme zadnjeg zalijevanja: {e}")
-    print("[AUTO] Zalijevanje završeno.")
-
+            with open(PID_FILE, 'r') as f:
+                pid = int(f.read().strip())
+            # Provjeri postoji li proces s tim PID-om
+            os.kill(pid, 0)
+            print(f"Logger proces s PID-om {pid} je već aktivan. Izlazim.")
+            return True # Proces je aktivan
+        except (OSError, ValueError):
+            # Proces ne postoji ili je PID datoteka neispravna, brišemo je
+            print("Pronađena stara/neispravna PID datoteka, brišem je.")
+            os.remove(PID_FILE)
+    return False
 
 def run_logger():
     """Glavna petlja za periodično očitavanje senzora i upis u bazu."""
     pid = os.getpid()
+    with open(PID_FILE, "w") as f:
+        f.write(str(pid))
+
     print(f"Logger se pokreće s PID: {pid}...")
     database.init_db()
     os.makedirs(LOGS_DIR, exist_ok=True)
@@ -110,6 +99,9 @@ def run_logger():
 
 
 if __name__ == "__main__":
+    if check_if_already_running():
+        sys.exit(1)
+
     try:
         hardware.initialize()
         run_logger()
