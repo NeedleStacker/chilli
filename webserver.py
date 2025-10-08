@@ -11,6 +11,9 @@ import sensors
 import database
 from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
 
+# Flask
+from flask import Flask, render_template, jsonify, request
+
 # --- Inicijalizacija ---
 hardware.initialize()
 database.init_db()
