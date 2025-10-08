@@ -432,13 +432,17 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	async function updateLoggerStatus() {
+		const el = document.getElementById('loggerStatusTXT');
 		try {
 			const data = await fetchJSON('/api/status');
-			const el = document.getElementById('loggerStatusTXT');
 			el.innerText = data.status;
-			el.style.color = data.status.includes(" u ") ? "green" : "red";
+			// Provjeri sadrži li status riječ "RUNNING" za bojanje u zeleno
+			if (data.status && data.status.toUpperCase().includes("RUNNING")) {
+				el.style.color = "green";
+			} else {
+				el.style.color = "red";
+			}
 		} catch (e) {
-			const el = document.getElementById('loggerStatusTXT');
 			el.innerText = "Greška pri dohvaćanju statusa";
 			el.style.color = "red";
 		}
