@@ -1,19 +1,12 @@
 from config import DEV_MODE, RELAY1, RELAY2
+import time
 
 if not DEV_MODE:
     try:
         import RPi.GPIO as GPIO
-    except (ImportError, RuntimeError):
-        print("[CRITICAL] Nije moguće uvesti RPi.GPIO. Pokrećete li na Raspberry Pi-ju?")
-        # Postavi lažni GPIO da se aplikacija ne sruši
-        class FakeGPIO:
-            def __getattr__(self, name):
-                def method(*args, **kwargs):
-                    print(f"Pozvana lažna GPIO metoda: {name}({args}, {kwargs})")
-                return method
-        GPIO = FakeGPIO()
-
-import time
+    except (ImportError, RuntimeError) as e:
+        raise ImportError(f"Nije moguće uvesti RPi.GPIO: {e}. "
+                          "Postavite DEV_MODE=True u config.py za rad bez hardvera.")
 
 def set_relay_state(relay_pin, state):
     """

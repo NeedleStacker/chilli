@@ -16,8 +16,6 @@ from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE, PID_FILE
 from flask import Flask, render_template, jsonify, request
 
 # --- Inicijalizacija ---
-hardware.initialize()
-database.init_db()
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 atexit.register(hardware.cleanup)
@@ -268,5 +266,12 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    # use_reloader=False je ključno za stabilno stanje logger_process varijable
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    try:
+        # Inicijalizacija hardvera i baze podataka prije pokretanja servera
+        hardware.initialize()
+        database.init_db()
+        # use_reloader=False je ključno za stabilno stanje logger_process varijable
+        app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    except ImportError as e:
+        print(f"[STARTUP ERROR] {e}")
+        # Ne pokreći server ako hardver nije dostupan, a DEV_MODE je False
