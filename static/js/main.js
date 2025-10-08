@@ -172,6 +172,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ------- Event Listeners -------
+    document.getElementById('btnDeleteRows').addEventListener('click', async () => {
+        const deleteStatusEl = document.getElementById('deleteStatus');
+        const idsInput = document.getElementById('deleteIdsInput').value.trim();
+        if (!idsInput) {
+            deleteStatusEl.textContent = "Molimo unesite ID-eve za brisanje.";
+            return;
+        }
+
+        const ids = (idsInput.toLowerCase() === 'all') ? ['all'] : idsInput.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+
+        if (ids.length === 0 && idsInput.toLowerCase() !== 'all') {
+            deleteStatusEl.textContent = "Nisu pronađeni ispravni ID-evi.";
+            return;
+        }
+
+        const res = await fetchJSON('/api/logs/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: ids })
+        });
+
+        if (res) {
+            deleteStatusEl.textContent = res.msg;
+            if (res.ok) {
+                refreshAllData();
+            }
+        }
+    });
+
     document.getElementById('btnStartFirst').addEventListener('click', async () => {
         const res = await fetchJSON('/api/run/start_first', { method: 'POST' });
         if (res) updateLoggerStatus();
@@ -194,5 +223,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ------- Inicijalno učitavanje i periodično osvježavanje -------
     refreshAllData();
-    setInterval(refreshAllData, 15000); // Osvježavanje svakih 15 sekundi
+    // setInterval(refreshAllData, 15000); // Uklonjeno automatsko osvježavanje na zahtjev
 });

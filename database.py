@@ -106,53 +106,42 @@ def get_logs_where(where_clause, params=[]):
     return rows
 
 def delete_logs_by_id(ids):
-    """Briše logove na temelju liste ID-eva, stringa 'all', ili stringa s rasponima."""
-    if not ids:
-        return False, "Nema ID-eva za brisanje."
+    """Briše logove na temelju liste ID-eva. Podržava ['all'] za brisanje svih zapisa."""
+    if not ids or not isinstance(ids, list):
+        return False, "Neispravan format zahtjeva."
 
     conn = _get_db_connection()
     c = conn.cursor()
+    deleted_count_str = "0"
 
     try:
-        if isinstance(ids, str) and ids.lower().strip() == 'all':
+        # Slučaj kada frontend pošalje ['all']
+        if ids[0] == 'all':
             c.execute("DELETE FROM logs")
+            # Resetiraj autoincrement brojač
             c.execute("DELETE FROM sqlite_sequence WHERE name='logs'")
+            # Iako c.rowcount ne radi za DELETE bez WHERE, znamo da su svi obrisani
             deleted_count_str = "svi"
         else:
-            id_list = []
-            if isinstance(ids, list):
-                 id_list = [int(x) for x in ids]
-            elif isinstance(ids, str):
-                for part in ids.split(','):
-                    part = part.strip()
-                    if '-' in part:
-                        start, end = map(int, part.split('-'))
-                        id_list.extend(range(start, end + 1))
-                    elif part.isdigit():
-                        id_list.append(int(part))
-            else:
-                conn.close()
-                return False, "Neispravan format ID-eva."
-
+            # Slučaj kada frontend pošalje listu brojeva [1, 2, 3]
+            id_list = [int(i) for i in ids]
             if not id_list:
-                conn.close()
                 return False, "Nema valjanih ID-eva za brisanje."
 
             placeholders = ",".join("?" for _ in id_list)
             c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
-            deleted_count_str = f"{c.rowcount}"
+            deleted_count_str = str(c.rowcount)
 
         conn.commit()
         return True, f"Obrisano {deleted_count_str} zapisa."
-    except ValueError:
-        conn.close()
+    except (ValueError, TypeError):
+        conn.rollback()
         return False, "ID-evi moraju biti brojevi."
-    except Exception as e:
-        conn.close()
+    except sqlite3.Error as e:
+        conn.rollback()
         return False, f"Greška u bazi: {e}"
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 # --- Funkcije za rad s logovima releja ---
 
