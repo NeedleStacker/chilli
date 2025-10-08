@@ -83,8 +83,8 @@ def all_data_page():
 
 # ---- API Rute ----
 
-@app.route("/api/run/start", methods=["POST"])
-def api_run_start():
+@app.route("/api/run/start_first", methods=["POST"])
+def api_run_start_first():
     ok, msg = start_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
@@ -114,7 +114,8 @@ def api_logs_all():
     # ... (logika ostaje ista)
     allowed_columns = {
         "air_temp": "dht22_air_temp", "air_humidity": "dht22_humidity",
-        "soil_temp": "ds18b20_soil_temp", "soil_percent": "soil_percent", "lux": "lux"
+        "soil_temp": "ds18b20_soil_temp", "soil_percent": "soil_percent", "lux": "lux",
+        "stable": "stable"
     }
     query_params = []
     where_conditions = []
