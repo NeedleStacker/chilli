@@ -1,8 +1,7 @@
 import time
 import datetime
 import os
-import glob
-import argparse
+import signal
 
 # Moduli projekta
 import hardware
@@ -10,162 +9,118 @@ import database
 import sensors
 from relays import set_relay_state
 from config import (
-    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE,
+    LOGS_DIR, STATUS_FILE, LAST_WATERING_FILE, PID_FILE,
     LOG_INTERVAL_SECONDS, WATERING_THRESHOLD_PERCENT,
     WATERING_DURATION_SECONDS, WATERING_COOLDOWN_SECONDS,
     RELAY1
 )
 
-def cleanup_old_images(folder, months=3):
-    """Briše stare slike iz log direktorija."""
-    now = time.time()
-    cutoff = now - (months * 30 * 24 * 3600)
-    for f in glob.glob(os.path.join(folder, "*.jpg")):
-        if os.path.getmtime(f) < cutoff:
-            try:
-                os.remove(f)
-            except OSError as e:
-                print(f"[WARN] Nije moguće obrisati staru sliku {f}: {e}")
+def cleanup():
+    """Čisti PID i statusne datoteke."""
+    print("Čistim PID i status datoteke...")
+    if os.path.exists(PID_FILE):
+        os.remove(PID_FILE)
+    if os.path.exists(STATUS_FILE):
+        os.remove(STATUS_FILE)
+
+def handle_signal(signum, frame):
+    """Handler za signale (npr. SIGTERM) za sigurno gašenje."""
+    print(f"Primljen signal {signum}, gasim se...")
+    exit(0)
+
+# Registriraj handlere za sigurno gašenje
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
 
 
 def should_water(soil_percent):
     """Provjerava treba li pokrenuti automatsko zalijevanje."""
-    if soil_percent is None:
-        return False
-
-    if soil_percent >= WATERING_THRESHOLD_PERCENT:
-        return False
-
+    if soil_percent is None: return False
+    if soil_percent >= WATERING_THRESHOLD_PERCENT: return False
     if os.path.exists(LAST_WATERING_FILE):
         try:
-            with open(LAST_WATERING_FILE, "r") as f:
-                last_ts = float(f.read().strip())
+            with open(LAST_WATERING_FILE, "r") as f: last_ts = float(f.read().strip())
             if time.time() - last_ts < WATERING_COOLDOWN_SECONDS:
-                print("[AUTO] Preskačem zalijevanje (cooldown period je aktivan).")
                 return False
         except (ValueError, IOError):
             pass
-
     return True
 
 
 def perform_watering():
     """Aktivira relej pumpe za vodu i bilježi vrijeme."""
-    print(f"[AUTO] Uključujem pumpu na {WATERING_DURATION_SECONDS} sekundi...")
+    print(f"[AUTO] Uključujem pumpu na {WATERING_DURATION_SECONDS}s ...")
     try:
         set_relay_state(RELAY1, True)
-        time.sleep(WATERING_DURATION_SECONDS)
         database.insert_relay_event("RELAY1", "ON", source="auto")
+        time.sleep(WATERING_DURATION_SECONDS)
     finally:
         set_relay_state(RELAY1, False)
         database.insert_relay_event("RELAY1", "OFF", source="auto")
-
     try:
-        with open(LAST_WATERING_FILE, "w") as f:
-            f.write(str(time.time()))
+        with open(LAST_WATERING_FILE, "w") as f: f.write(str(time.time()))
     except IOError as e:
         print(f"[ERROR] Nije moguće zapisati vrijeme zadnjeg zalijevanja: {e}")
-
     print("[AUTO] Zalijevanje završeno.")
 
 
 def run_logger():
     """Glavna petlja za periodično očitavanje senzora i upis u bazu."""
-    print("Logger se pokreće...")
-    # Osiguraj da baza i tablice postoje prije glavne petlje
+    pid = os.getpid()
+    with open(PID_FILE, "w") as f:
+        f.write(str(pid))
+
+    print(f"Logger se pokreće s PID: {pid}...")
     database.init_db()
     os.makedirs(LOGS_DIR, exist_ok=True)
 
-    # Zapiši status da je logger pokrenut
-    try:
-        with open(STATUS_FILE, "w") as f:
-            f.write(f"RUNNING @ {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')} (PID: {os.getpid()})")
-    except IOError as e:
-        print(f"[ERROR] Nije moguće zapisati statusnu datoteku: {e}")
-
     try:
         while True:
-            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with open(STATUS_FILE, "w") as f:
+                f.write(f"RUNNING @ {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})")
 
-            # --- Očitavanje svih senzora s detaljnim logiranjem grešaka ---
-            try:
-                lux = sensors.read_bh1750_lux()
-            except Exception as e:
-                print(f"[LOGGER-ERROR] Greška pri čitanju BH1750 (svjetlost): {e}")
-                lux = None
-
+            # --- Očitavanje senzora ---
+            try: lux = sensors.read_bh1750_lux()
+            except Exception as e: print(f"[ERROR] BH1750: {e}"); lux = None
             try:
                 soil_raw, soil_voltage = sensors.read_soil_raw()
                 soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
-            except Exception as e:
-                print(f"[LOGGER-ERROR] Greška pri čitanju ADS1115 (vlaga zemlje): {e}")
-                soil_raw, soil_voltage, soil_percent = None, None, None
+            except Exception as e: print(f"[ERROR] ADS1115: {e}"); soil_raw, soil_voltage, soil_percent = None, None, None
+            try: air_temp, air_humidity = sensors.test_dht()
+            except Exception as e: print(f"[ERROR] DHT22: {e}"); air_temp, air_humidity = None, None
+            try: soil_temp = sensors.read_ds18b20_temp()
+            except Exception as e: print(f"[ERROR] DS18B20: {e}"); soil_temp = None
 
-            try:
-                air_temp, air_humidity = sensors.test_dht()
-            except Exception as e:
-                print(f"[LOGGER-ERROR] Greška pri čitanju DHT22 (zrak): {e}")
-                air_temp, air_humidity = None, None
-
-            try:
-                soil_temp = sensors.read_ds18b20_temp()
-            except Exception as e:
-                print(f"[LOGGER-ERROR] Greška pri čitanju DS18B20 (temp. zemlje): {e}")
-                soil_temp = None
-
-            # Zaokruživanje vrijednosti radi čistoće podataka
-            air_humidity = round(air_humidity, 2) if air_humidity is not None else None
-            air_temp = round(air_temp, 2) if air_temp is not None else None
-            soil_temp = round(soil_temp, 2) if soil_temp is not None else None
-            soil_voltage = round(soil_voltage, 3) if soil_voltage is not None else None
-            soil_percent = round(soil_percent, 2) if soil_percent is not None else None
-            lux = round(lux, 2) if lux is not None else None
-
-            # Detaljan ispis očitanih vrijednosti za debugiranje
-            print("[LOGGER-DEBUG] Očitane vrijednosti prije upisa u bazu:")
-            print(f"  - Timestamp: {timestamp}")
-            print(f"  - Zrak Temp: {air_temp}, Vlaga: {air_humidity}")
-            print(f"  - Zemlja Temp: {soil_temp}")
-            print(f"  - Vlaga Raw: {soil_raw}, Napon: {soil_voltage}, Postotak: {soil_percent}")
-            print(f"  - Svjetlost Lux: {lux}")
-
-            # Fiksna vrijednost za 'stable' stupac
+            # --- Upis u bazu ---
             stable_flag = 1
-            print(f"  - Stable: {stable_flag}")
+            database.insert_log(
+                datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
+                round(air_temp, 2) if air_temp is not None else None,
+                round(air_humidity, 2) if air_humidity is not None else None,
+                round(soil_temp, 2) if soil_temp is not None else None,
+                soil_raw,
+                round(soil_voltage, 3) if soil_voltage is not None else None,
+                round(soil_percent, 2) if soil_percent is not None else None,
+                round(lux, 2) if lux is not None else None,
+                stable_flag
+            )
+            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Zapis spremljen.")
 
-            # Upis u bazu - funkcija sada sama upravlja konekcijom
-            database.insert_log(timestamp, air_temp, air_humidity, soil_temp,
-                                soil_raw, soil_voltage, soil_percent, lux, stable_flag)
-
-            print(f"[{timestamp}] Zapis spremljen u bazu.")
-
-            # Provjera i izvršavanje automatskog zalijevanja
             if should_water(soil_percent):
                 perform_watering()
 
-            cleanup_old_images(LOGS_DIR, months=3)
             time.sleep(LOG_INTERVAL_SECONDS)
-
-    except KeyboardInterrupt:
-        print("\nZaustavljeno od strane korisnika.")
     finally:
-        # Ukloni statusnu datoteku pri gašenju
-        if os.path.exists(STATUS_FILE):
-            os.remove(STATUS_FILE)
-        print("Logger zaustavljen.")
+        cleanup()
 
 
 if __name__ == "__main__":
-    """
-    Glavna ulazna točka kada se skripta pokrene direktno.
-    Ovo omogućuje webserveru da pokrene logger kao zaseban proces.
-    """
     try:
         hardware.initialize()
         run_logger()
-    except KeyboardInterrupt:
-        print("\nLogger proces prekinut.")
     except Exception as e:
         print(f"Dogodila se kritična greška u loggeru: {e}")
     finally:
         hardware.cleanup()
+        cleanup()
+        print("Logger proces potpuno ugašen.")

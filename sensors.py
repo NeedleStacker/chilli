@@ -32,7 +32,7 @@ def read_soil_raw():
         fake_raw = int(fake_voltage * 10000)
         return fake_raw, fake_voltage
 
-    if not 'hardware' in locals() or hardware.i2c is None:
+    if 'hardware' not in locals() or not hasattr(hardware, 'i2c') or hardware.i2c is None:
         print("[ERROR] I2C sabirnica nije inicijalizirana.")
         return None, None
     try:
