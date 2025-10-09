@@ -4,6 +4,7 @@ import threading
 import time
 import atexit
 import datetime
+import signal
 
 # Moduli projekta
 import hardware
@@ -72,23 +73,31 @@ def start_logger():
             return False, "Neuspješno pokretanje loggera."
 
 def stop_logger():
-    """Zaustavlja logger.py podproces."""
+    """Zaustavlja logger.py podproces čitanjem PID-a iz datoteke."""
     global logger_process
     with logger_lock:
         if not is_logger_running():
             return False, "Logger nije bio pokrenut."
 
         try:
-            pid = logger_process.pid
-            logger_process.terminate()
-            logger_process.wait(timeout=5)
-            print(f"Logger proces (PID: {pid}) zaustavljen (terminate).")
-        except (subprocess.TimeoutExpired, AttributeError):
-             print("Logger proces nije odgovarao ili je već ugašen.")
+            with open(PID_FILE, 'r') as f:
+                pid = int(f.read().strip())
 
-        logger_process = None
-        if os.path.exists(STATUS_FILE):
-            os.remove(STATUS_FILE)
+            os.kill(pid, signal.SIGTERM)
+            print(f"Poslan SIGTERM signal procesu s PID={pid}.")
+
+            # Pričekaj kratko da se proces ugasi i počisti za sobom
+            time.sleep(1)
+
+        except (IOError, ValueError, ProcessLookupError) as e:
+            print(f"Greška pri zaustavljanju loggera: {e}")
+            # Ako je proces već ugašen, samo počisti datoteke
+        finally:
+            if os.path.exists(PID_FILE):
+                os.remove(PID_FILE)
+            if os.path.exists(STATUS_FILE):
+                os.remove(STATUS_FILE)
+            logger_process = None
 
         return True, "Logger zaustavljen."
 
