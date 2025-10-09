@@ -117,3 +117,28 @@ def test_api_relay_toggle(client):
         assert relay_logs[0]['relay_name'] == 'RELAY1'
         assert relay_logs[0]['action'] == 'ON'
         assert relay_logs[0]['source'] == 'web'
+
+def test_api_start_stop_logger(client, manage_pid_file):
+    """Test starting and stopping the logger via the API."""
+    # 1. Ensure logger is not running initially
+    assert not is_logger_running()
+
+    # 2. Start the logger
+    response = client.post('/api/run/start_first')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['ok'] is True
+    assert data['running'] is True
+    assert "Logger pokrenut" in data['msg']
+    assert is_logger_running()
+    assert os.path.exists(PID_FILE)
+
+    # 3. Stop the logger
+    response = client.post('/api/run/stop')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['ok'] is True
+    assert data['running'] is False
+    assert "Logger zaustavljen" in data['msg']
+    assert not is_logger_running()
+    assert not os.path.exists(PID_FILE)
