@@ -31,10 +31,7 @@
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn"
-          onclick="this.previousElementSibling.previousElementSibling.previousElementSibling.previousElementSibling.previousElementSibling.textContent = (d => `timestamp BETWEEN '${d[0]}' AND '${d[1]}'`)((() => { const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30); const f = d => d.toISOString().split('T')[0]; return [f(p), f(t)]; })())">
-          timestamp (zadnjih 30 dana)
-      </button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" id="timestamp-btn">timestamp (zadnjih 30 dana)</button>
 	</div>
   </div>
 
@@ -195,7 +192,16 @@ document.getElementById('btnDeleteRows').addEventListener('click', async () => {
 
 document.querySelectorAll('.example-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.getElementById('whereInput').value = btn.innerText;
+    const whereInput = document.getElementById('whereInput');
+    if (btn.id === 'timestamp-btn') {
+      const today = new Date();
+      const priorDate = new Date(new Date().setDate(today.getDate() - 30));
+      const formatDate = (d) => d.toISOString().split('T')[0].replace(/-/g, '-');
+      // Format za bazu je YYYY-MM-DD_HH-MM-SS
+      whereInput.value = `timestamp BETWEEN '${formatDate(priorDate)}_00-00-00' AND '${formatDate(today)}_23-59-59'`;
+    } else {
+      whereInput.value = btn.innerText;
+    }
   });
 });
 

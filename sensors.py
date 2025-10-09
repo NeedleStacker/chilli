@@ -3,6 +3,7 @@ import json
 import time
 import glob
 import random
+import hardware # Uvozimo naš hardverski modul
 
 # Moduli projekta
 from config import (
@@ -10,17 +11,29 @@ from config import (
     DHT_SENSOR, DHT_PIN, DEV_MODE
 )
 
-# Biblioteke koje se koriste samo ako DEV_MODE = False
-# Ovo sprječava 'import' greške na sustavima bez hardverskih biblioteka
+# --- Biblioteke koje se koriste samo ako DEV_MODE = False ---
+# Inicijaliziramo ih na None da možemo provjeravati njihovu dostupnost
+smbus2, Adafruit_DHT, ADS, AnalogIn = None, None, None, None
+
 if not DEV_MODE:
     try:
-        import smbus2
-        import Adafruit_DHT
-        from adafruit_ads1x15.analog_in import AnalogIn
-        import adafruit_ads1x15.ads1115 as ADS
-        import hardware # hardware se koristi samo s pravim senzorima
-    except ImportError as e:
-        print(f"[WARN] Nije moguće uvesti hardverske biblioteke: {e}. Provjerite instalaciju.")
+        import smbus2 as real_smbus2
+        smbus2 = real_smbus2
+    except ImportError:
+        print("[WARN] 'smbus2' biblioteka nije pronađena. BH1750 senzor neće raditi.")
+
+    try:
+        import Adafruit_DHT as real_Adafruit_DHT
+        Adafruit_DHT = real_Adafruit_DHT
+    except ImportError:
+        print("[WARN] 'Adafruit_DHT' biblioteka nije pronađena. DHT22 senzor neće raditi.")
+
+    try:
+        from adafruit_ads1x15.analog_in import AnalogIn as real_AnalogIn
+        from adafruit_ads1x15 import ads1115 as real_ADS
+        AnalogIn, ADS = real_AnalogIn, real_ADS
+    except ImportError:
+        print("[WARN] 'adafruit-circuitpython-ads1x15' biblioteka nije pronađena. ADS1115 senzor vlage neće raditi.")
 
 
 # --- Glavne funkcije za očitavanje senzora ---
@@ -32,8 +45,8 @@ def read_soil_raw(retries=3, delay=0.1):
         fake_raw = int(fake_voltage * 10000)
         return fake_raw, fake_voltage
 
-    if 'hardware' not in locals() or not hasattr(hardware, 'i2c') or hardware.i2c is None:
-        print("[ERROR] I2C sabirnica nije inicijalizirana.")
+    if not all([ADS, AnalogIn, hardware.i2c]):
+        print("[ERROR] ADS1115 biblioteka ili I2C sabirnica nije dostupna.")
         return None, None
 
     for attempt in range(retries):
@@ -41,12 +54,9 @@ def read_soil_raw(retries=3, delay=0.1):
             ads = ADS.ADS1115(hardware.i2c)
             ads.gain = 1
             chan = AnalogIn(ads, ADS.P0)
-            # Dva čitanja za stabilizaciju
             _ = chan.value
             time.sleep(0.05)
-            value = chan.value
-            voltage = chan.voltage
-            return value, voltage
+            return chan.value, chan.voltage
         except Exception as e:
             print(f"[WARN] Pokušaj {attempt + 1}/{retries} neuspješan za ADS1115: {e}")
             if attempt < retries - 1:
@@ -63,7 +73,7 @@ def read_ds18b20_temp(retries=3, delay=0.1):
         try:
             device_folders = glob.glob(os.path.join(W1_BASE_DIR, '28-*'))
             if not device_folders:
-                print("[WARN] DS18B20 nije pronađen.")
+                if attempt == 0: print("[WARN] DS18B20 nije pronađen.")
                 return None
             device_file = os.path.join(device_folders[0], 'w1_slave')
             with open(device_file, 'r') as f:
@@ -84,13 +94,16 @@ def read_bh1750_lux(retries=3, delay=0.2):
     if DEV_MODE:
         return random.uniform(100.0, 1500.0)
 
+    if not smbus2:
+        print("[ERROR] 'smbus2' biblioteka nije dostupna za BH1750.")
+        return None
+
     bus = None
     for attempt in range(retries):
         try:
             bus = smbus2.SMBus(1)
-            # Kontinuirano mjerenje visoke rezolucije
             bus.write_byte(BH1750_ADDR, 0x10)
-            time.sleep(0.2) # Vrijeme za konverziju
+            time.sleep(0.2)
             data = bus.read_i2c_block_data(BH1750_ADDR, 0, 2)
             lux = (data[0] << 8 | data[1]) / 1.2
             bus.close()
@@ -109,6 +122,10 @@ def test_dht():
     """Očitava DHT22 senzor."""
     if DEV_MODE:
         return random.uniform(23.0, 27.0), random.uniform(40.0, 60.0)
+
+    if not Adafruit_DHT or not hardware.GPIO:
+        print("[ERROR] Adafruit_DHT biblioteka ili GPIO nije dostupan.")
+        return None, None
 
     try:
         humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)

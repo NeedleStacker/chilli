@@ -58,8 +58,10 @@ def start_logger():
         if os.path.exists(logger_logfile):
             os.remove(logger_logfile)
 
+        # Proslijedi trenutno okruženje (uključujući FLASK_ENV) u podproces
+        env = os.environ.copy()
         with open(logger_logfile, "a") as logfile:
-            proc = subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT, env=env)
 
         logger_process = proc
         time.sleep(0.5)

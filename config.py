@@ -23,7 +23,13 @@ BH1750_ADDR = 0x23
 # --- Postavke Aplikacije ---
 # Postavi DEV_MODE na True ako je FLASK_ENV postavljen na 'testing', inače False.
 DEV_MODE = os.environ.get('FLASK_ENV') == 'testing'
-LOG_INTERVAL_SECONDS = 2400 # Vraćeno na 40 minuta
+
+# Koristi kraći interval za testiranje da bi se podaci brže generirali
+if DEV_MODE:
+    LOG_INTERVAL_SECONDS = 2
+else:
+    LOG_INTERVAL_SECONDS = 2400 # 40 minuta
+
 WATERING_THRESHOLD_PERCENT = 40.0
 WATERING_DURATION_SECONDS = 5
 WATERING_COOLDOWN_SECONDS = 60
