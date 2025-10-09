@@ -71,24 +71,21 @@ def run_logger():
         air_temp, air_humidity = sensors.test_dht()
         soil_temp = sensors.read_ds18b20_temp()
 
-        # Izračunaj postotak vlažnosti samo ako je očitavanje napona uspjelo
-        if soil_voltage is not None:
-            soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
-        else:
-            soil_percent = None
+        # Izračunaj postotak vlažnosti. Funkcija je sigurna za pozivanje s None.
+        soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
 
         # Provjera jesu li sva očitanja uspjela
         stable_flag = 1 if all(v is not None for v in [lux, soil_voltage, air_temp, soil_temp]) else 0
         database.insert_log(
-            datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
-            round(air_temp, 2) if air_temp is not None else None,
-            round(air_humidity, 2) if air_humidity is not None else None,
-            round(soil_temp, 2) if soil_temp is not None else None,
-            soil_raw,
-            round(soil_voltage, 3) if soil_voltage is not None else None,
-            round(soil_percent, 2) if soil_percent is not None else None,
-            round(lux, 2) if lux is not None else None,
-            stable_flag
+            timestamp=datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
+            air_temp=round(air_temp, 2) if air_temp is not None else None,
+            air_humidity=round(air_humidity, 2) if air_humidity is not None else None,
+            soil_temp=round(soil_temp, 2) if soil_temp is not None else None,
+            soil_raw=soil_raw,
+            soil_voltage=round(soil_voltage, 3) if soil_voltage is not None else None,
+            soil_percent=round(soil_percent, 2) if soil_percent is not None else None,
+            lux=round(lux, 2) if lux is not None else None,
+            stable=stable_flag
         )
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Zapis spremljen.")
 
