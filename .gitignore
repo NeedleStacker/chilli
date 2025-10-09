@@ -69,4 +69,5 @@ instance/
 *.db-journal
 *.log
 *.pid
+logger_status.txt
 jules-scratch/
