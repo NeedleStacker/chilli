@@ -49,9 +49,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tempChart = createChart('tempChart', [
         { label: 'Temp. Zraka (°C)', borderColor: '#007bff', data: [] },
         { label: 'Temp. Zemlje (°C)', borderColor: '#28a745', data: [] }
-    ]);
-    const humChart = createChart('humChart', [{ label: 'Vlaga Zraka (%)', borderColor: '#ffc107', data: [] }]);
-    const soilChart = createChart('soilChart', [{ label: 'Vlaga Zemlje (%)', borderColor: '#8B4513', data: [] }]);
+    ], { max: 50 });
+    const humChart = createChart('humChart', [{ label: 'Vlaga Zraka (%)', borderColor: '#ffc107', data: [] }], { max: 100 });
+    const soilChart = createChart('soilChart', [{ label: 'Vlaga Zemlje (%)', borderColor: '#8B4513', data: [] }], { max: 100 });
     const luxChart = createChart('luxChart', [{ label: 'Svjetlost (lx)', borderColor: '#800080', data: [] }]);
     let relayChart = null;
 
@@ -177,6 +177,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const idsInput = document.getElementById('deleteIdsInput').value.trim();
         if (!idsInput) {
             deleteStatusEl.textContent = "Molimo unesite ID-eve za brisanje.";
+            return;
+        }
+
+        const confirmationMessage = (idsInput.toLowerCase() === 'all')
+            ? "Jeste li sigurni da želite obrisati SVE zapise? Ova akcija je nepovratna."
+            : `Jeste li sigurni da želite obrisati zapise s ID-evima: ${idsInput}?`;
+
+        if (!window.confirm(confirmationMessage)) {
+            deleteStatusEl.textContent = "Brisanje otkazano.";
             return;
         }
 

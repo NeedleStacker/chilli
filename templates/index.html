@@ -83,7 +83,9 @@
 							</div>
 							<p>
 								<strong>Status:</strong>
-								<span id="loggerStatusTXT" class="fw-bold">Učitavanje...</span>
+								<span id="loggerStatusTXT" class="fw-bold" style="color: {% if logger_running %}green{% else %}red{% endif %};">
+                                    {% if logger_running %}RUNNING{% else %}Logger nije pokrenut{% endif %}
+                                </span>
 							</p>
 						</div>
 						<div class="col-md-6">
