@@ -41,10 +41,12 @@ def check_if_already_running():
         try:
             with open(PID_FILE, 'r') as f:
                 pid = int(f.read().strip())
+            # Provjeri postoji li proces s tim PID-om
             os.kill(pid, 0)
             print(f"Logger proces s PID-om {pid} je već aktivan. Izlazim.")
-            return True
+            return True # Proces je aktivan
         except (OSError, ValueError):
+            # Proces ne postoji ili je PID datoteka neispravna, brišemo je
             print("Pronađena stara/neispravna PID datoteka, brišem je.")
             os.remove(PID_FILE)
     return False
@@ -63,12 +65,14 @@ def run_logger():
         with open(STATUS_FILE, "w") as f:
             f.write(f"RUNNING @ {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})")
 
+        # Očitavanje senzora s novom, otpornijom logikom iz sensors.py
         lux = sensors.read_bh1750_lux()
         soil_raw, soil_voltage = sensors.read_soil_raw()
         air_temp, air_humidity = sensors.test_dht()
         soil_temp = sensors.read_ds18b20_temp()
         soil_percent = sensors.read_soil_percent_from_voltage(soil_voltage)
 
+        # Provjera jesu li sva očitanja uspjela
         stable_flag = 1 if all(v is not None for v in [lux, soil_voltage, air_temp, soil_temp]) else 0
 
         # Ispravljen poziv funkcije s ključnim riječima (keyword arguments)
@@ -84,6 +88,11 @@ def run_logger():
             stable=stable_flag
         )
         print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Zapis spremljen.")
+
+        # Automatsko zalijevanje je privremeno isključeno
+        # if should_water(soil_percent):
+        #     perform_watering()
+
         time.sleep(LOG_INTERVAL_SECONDS)
 
 

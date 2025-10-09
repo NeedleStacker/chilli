@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sensorOutputEl = document.getElementById('sensorOutput');
     const logsTableBody = document.getElementById('logsBody');
     const relayLogTableBody = document.querySelector('#relayLogTable tbody');
+    const deleteStatusEl = document.getElementById('deleteStatus');
 
     // ------- HELPERI -------
     function formatTime(ts) {
@@ -49,9 +50,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tempChart = createChart('tempChart', [
         { label: 'Temp. Zraka (°C)', borderColor: '#007bff', data: [] },
         { label: 'Temp. Zemlje (°C)', borderColor: '#28a745', data: [] }
-    ], { max: 50 });
-    const humChart = createChart('humChart', [{ label: 'Vlaga Zraka (%)', borderColor: '#ffc107', data: [] }], { max: 100 });
-    const soilChart = createChart('soilChart', [{ label: 'Vlaga Zemlje (%)', borderColor: '#8B4513', data: [] }], { max: 100 });
+    ], { max: 50, beginAtZero: true });
+    const humChart = createChart('humChart', [{ label: 'Vlaga Zraka (%)', borderColor: '#ffc107', data: [] }], { max: 100, beginAtZero: true });
+    const soilChart = createChart('soilChart', [{ label: 'Vlaga Zemlje (%)', borderColor: '#8B4513', data: [] }], { max: 100, beginAtZero: true });
     const luxChart = createChart('luxChart', [{ label: 'Svjetlost (lx)', borderColor: '#800080', data: [] }]);
     let relayChart = null;
 
@@ -108,23 +109,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Ažuriranje grafikona
         const chartData = data.chart_data;
-        if (!chartData || (!chartData.RELAY1?.length && !chartData.RELAY2?.length)) return;
+        if (document.getElementById('relayChart') && chartData) {
+            if (!relayChart) {
+                relayChart = createChart('relayChart', [
+                    { label: 'Relej 1', data: [], borderColor: 'rgb(255, 99, 132)', stepped: true },
+                    { label: 'Relej 2', data: [], borderColor: 'rgb(54, 162, 235)', stepped: true }
+                ], { min: 0, max: 1.2, ticks: { stepSize: 0.5, callback: v => (v === 1 ? 'R1 ON' : (v === 0.5 ? 'R2 ON' : '')) } });
+            }
 
-		const labels = [...new Set([...chartData.RELAY1.map(x => x.t), ...chartData.RELAY2.map(x => x.t)])].sort();
-		const relay1Display = chartData.RELAY1.map(d => d.v ? 1 : 0.05);
-		const relay2Display = chartData.RELAY2.map(d => d.v ? 0.5 : 0.5 - 0.05);
+            const labels = [...new Set([...(chartData.RELAY1 || []).map(x => x.t), ...(chartData.RELAY2 || []).map(x => x.t)])].sort();
+            const relay1Display = (chartData.RELAY1 || []).map(d => d.v ? 1 : 0.05);
+            const relay2Display = (chartData.RELAY2 || []).map(d => d.v ? 0.5 : 0.5 - 0.05);
 
-        if (!relayChart) {
-            relayChart = createChart('relayChart', [
-                { label: 'Relej 1', data: relay1Display, borderColor: 'rgb(255, 99, 132)', stepped: true },
-                { label: 'Relej 2', data: relay2Display, borderColor: 'rgb(54, 162, 235)', stepped: true }
-            ], { min: 0, max: 1.2, ticks: { stepSize: 0.5, callback: v => (v === 1 ? 'R1 ON' : (v === 0.5 ? 'R2 ON' : '')) } });
+            relayChart.data.labels = labels;
+            relayChart.data.datasets[0].data = relay1Display;
+            relayChart.data.datasets[1].data = relay2Display;
+            relayChart.update();
         }
-
-        relayChart.data.labels = labels;
-        relayChart.data.datasets[0].data = relay1Display;
-        relayChart.data.datasets[1].data = relay2Display;
-        relayChart.update();
     }
 
     async function toggleRelay(relayNum) {
@@ -173,7 +174,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ------- Event Listeners -------
     document.getElementById('btnDeleteRows').addEventListener('click', async () => {
-        const deleteStatusEl = document.getElementById('deleteStatus');
         const idsInput = document.getElementById('deleteIdsInput').value.trim();
         if (!idsInput) {
             deleteStatusEl.textContent = "Molimo unesite ID-eve za brisanje.";
@@ -230,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // ------- Inicijalno učitavanje i periodično osvježavanje -------
+    // ------- Inicijalno učitavanje -------
     refreshAllData();
     // setInterval(refreshAllData, 15000); // Uklonjeno automatsko osvježavanje na zahtjev
 });

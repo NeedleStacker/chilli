@@ -4,6 +4,7 @@ import threading
 import time
 import atexit
 import datetime
+
 import signal
 
 # Moduli projekta
@@ -17,13 +18,14 @@ from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE, PID_FILE
 from flask import Flask, render_template, jsonify, request
 
 # --- Inicijalizacija ---
+hardware.initialize()
+database.init_db()
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 atexit.register(hardware.cleanup)
 
-# --- Pouzdano upravljanje logger procesom (vraćeno na jednostavniju logiku) ---
+# --- Pouzdano upravljanje logger procesom ---
 logger_lock = threading.Lock()
-logger_process = None
 logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
 def is_logger_running():
@@ -33,12 +35,10 @@ def is_logger_running():
     try:
         with open(PID_FILE, 'r') as f:
             pid = int(f.read().strip())
-        # Provjera postoji li proces s tim PID-om.
-        # os.kill(pid, 0) baca OSError ako proces ne postoji.
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # Provjerava postoji li proces
         return True
-    except (OSError, ValueError):
-        # Ako proces ne postoji ili PID datoteka nije ispravna,
+    except (IOError, ValueError, ProcessLookupError):
+        # Ako proces ne postoji ili je PID datoteka neispravna,
         # smatramo da logger nije pokrenut i brišemo datoteku.
         if os.path.exists(PID_FILE):
             os.remove(PID_FILE)
@@ -46,7 +46,6 @@ def is_logger_running():
 
 def start_logger():
     """Pokreće logger.py kao podproces."""
-    global logger_process
     with logger_lock:
         if is_logger_running():
             return False, "Logger je već pokrenut."
@@ -55,26 +54,29 @@ def start_logger():
         if not os.path.isfile(logger_script):
             return False, "logger.py skripta nije pronađena."
 
-        # Brišemo stari log pri svakom novom pokretanju radi čistoće
         if os.path.exists(logger_logfile):
             os.remove(logger_logfile)
 
-        # Proslijedi trenutno okruženje (uključujući FLASK_ENV) u podproces
+        # Proslijedi okruženje da bi testiranje radilo
         env = os.environ.copy()
         with open(logger_logfile, "a") as logfile:
-            proc = subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT, env=env)
+            # Ne spremamo `proc` objekt, oslanjamo se na PID datoteku
+            subprocess.Popen(["python3", logger_script], cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT, env=env)
 
-        logger_process = proc
-        time.sleep(0.5)
+        time.sleep(0.5)  # Daj vremena da se PID datoteka stvori
 
         if is_logger_running():
-            return True, f"Logger pokrenut s PID={proc.pid}."
+            try:
+                with open(PID_FILE, 'r') as f:
+                    pid = f.read().strip()
+                return True, f"Logger pokrenut s PID={pid}."
+            except IOError:
+                return True, "Logger pokrenut, ali PID nije bilo moguće pročitati."
         else:
             return False, "Neuspješno pokretanje loggera."
 
 def stop_logger():
     """Zaustavlja logger.py podproces čitanjem PID-a iz datoteke."""
-    global logger_process
     with logger_lock:
         if not is_logger_running():
             return False, "Logger nije bio pokrenut."
@@ -85,19 +87,16 @@ def stop_logger():
 
             os.kill(pid, signal.SIGTERM)
             print(f"Poslan SIGTERM signal procesu s PID={pid}.")
-
-            # Pričekaj kratko da se proces ugasi i počisti za sobom
-            time.sleep(1)
+            time.sleep(1)  # Pričekaj da se proces ugasi i počisti datoteku
 
         except (IOError, ValueError, ProcessLookupError) as e:
             print(f"Greška pri zaustavljanju loggera: {e}")
-            # Ako je proces već ugašen, samo počisti datoteke
         finally:
+            # Osiguraj da su datoteke uvijek obrisane
             if os.path.exists(PID_FILE):
                 os.remove(PID_FILE)
             if os.path.exists(STATUS_FILE):
                 os.remove(STATUS_FILE)
-            logger_process = None
 
         return True, "Logger zaustavljen."
 
@@ -134,7 +133,13 @@ def api_status():
         if os.path.exists(STATUS_FILE):
             with open(STATUS_FILE, "r") as f:
                 return {"status": f.read().strip()}
-        return {"status": f"RUNNING (PID: {logger_process.pid if logger_process else 'unknown'})"}
+        # Fallback ako statusna datoteka ne postoji, ali PID da
+        try:
+            with open(PID_FILE, 'r') as f:
+                pid = f.read().strip()
+            return {"status": f"RUNNING (PID: {pid})"}
+        except IOError:
+            return {"status": "RUNNING (unknown PID)"}
     else:
         return {"status": "Logger nije pokrenut"}
 
@@ -180,34 +185,24 @@ def api_logs_delete():
 @app.route("/api/sensor/read", methods=["GET"])
 def api_sensor_read():
     sensor_type = request.args.get("type", "all")
-
-    if sensor_type == "ads":
-        raw, voltage = sensors.read_soil_raw()
-        if raw is not None and voltage is not None:
+    try:
+        if sensor_type == "ads":
+            raw, voltage = sensors.read_soil_raw()
             percent = sensors.read_soil_percent_from_voltage(voltage)
             return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": percent})
-        else:
-            return jsonify({"error": "Neuspješno očitavanje ADS senzora."}), 500
-    elif sensor_type == "dht":
-        temp, hum = sensors.test_dht()
-        if temp is not None and hum is not None:
+        elif sensor_type == "dht":
+            temp, hum = sensors.test_dht()
             return jsonify({"type": "dht", "temperature": temp, "humidity": hum})
-        else:
-            return jsonify({"error": "Neuspješno očitavanje DHT senzora."}), 500
-    elif sensor_type == "ds18b20":
-        temp = sensors.read_ds18b20_temp()
-        if temp is not None:
+        elif sensor_type == "ds18b20":
+            temp = sensors.read_ds18b20_temp()
             return jsonify({"type": "ds18b20", "temperature": temp})
-        else:
-            return jsonify({"error": "Neuspješno očitavanje DS18B20 senzora."}), 500
-    elif sensor_type == "bh1750":
-        lux = sensors.read_bh1750_lux()
-        if lux is not None:
+        elif sensor_type == "bh1750":
+            lux = sensors.read_bh1750_lux()
             return jsonify({"type": "bh1750", "lux": lux})
         else:
-            return jsonify({"error": "Neuspješno očitavanje BH1750 senzora."}), 500
-    else:
-        return jsonify({"error": "Nepoznat tip senzora"}), 400
+            return jsonify({"error": "Nepoznat tip senzora"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
@@ -277,12 +272,5 @@ def get_logfile():
 
 
 if __name__ == "__main__":
-    try:
-        # Inicijalizacija hardvera i baze podataka prije pokretanja servera
-        hardware.initialize()
-        database.init_db()
-        # use_reloader=False je ključno za stabilno stanje logger_process varijable
-        app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
-    except ImportError as e:
-        print(f"[STARTUP ERROR] {e}")
-        # Ne pokreći server ako hardver nije dostupan, a DEV_MODE je False
+    # use_reloader=False je ključno za stabilno stanje logger_process varijable
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
