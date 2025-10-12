@@ -2,32 +2,53 @@ import sqlite3
 import datetime
 from config import DB_FILE
 
-# --- Pomoćne funkcije ---
+# --- Helper Functions ---
 
 def _dict_factory(cursor, row):
-    """Pretvara retke iz baze u rječnike (dict)."""
+    """Converts database rows into dictionaries.
+
+    This allows accessing columns by name instead of index.
+
+    Args:
+        cursor: The database cursor object.
+        row: The row tuple from the database.
+
+    Returns:
+        A dictionary representation of the database row.
+    """
     d = {}
     for idx, col in enumerate(cursor.description):
         d[col[0]] = row[idx]
     return d
 
 def _get_db_connection(dict_cursor=False):
-    """Vraća konekciju na bazu. Opcionalno koristi dict_factory."""
+    """Gets a connection to the SQLite database.
+
+    Args:
+        dict_cursor (bool): If True, the connection will use a row factory
+                            that returns rows as dictionaries.
+
+    Returns:
+        An sqlite3.Connection object.
+    """
     conn = sqlite3.connect(DB_FILE)
     if dict_cursor:
         conn.row_factory = _dict_factory
     return conn
 
-# --- Inicijalizacija ---
+# --- Initialization ---
 
 def init_db():
     """
-    Osigurava da baza i sve tablice postoje i imaju ispravnu shemu.
-    Sama upravlja svojom konekcijom.
+    Initializes the database, creating tables if they don't exist.
+
+    Ensures that the 'logs' and 'relay_log' tables are created with the correct
+    schema. It also handles schema migrations, such as adding the 'lux' column
+    or removing obsolete columns. This function manages its own database connection.
     """
     conn = _get_db_connection()
     c = conn.cursor()
-    # Kreiraj tablicu za logove senzora
+    # Create table for sensor logs
     c.execute("""
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +62,7 @@ def init_db():
             lux REAL
         )
     """)
-    # Kreiraj tablicu za događaje releja
+    # Create table for relay events
     c.execute("""
         CREATE TABLE IF NOT EXISTS relay_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,30 +73,43 @@ def init_db():
         )
     """)
 
-    # --- Migracija sheme (ako je potrebno) ---
+    # --- Schema Migration (if necessary) ---
     c.execute("PRAGMA table_info(logs)")
-    # dohvati imena stupaca (nalaze se na indeksu 1)
+    # fetch column names (they are at index 1)
     cols = [row[1] for row in c.fetchall()]
 
     if "lux" not in cols:
-        print("[DB] Dodajem stupac 'lux' u tablicu 'logs'...")
+        print("[DB] Adding 'lux' column to 'logs' table...")
         c.execute("ALTER TABLE logs ADD COLUMN lux REAL")
 
     if "stable" in cols:
-        print("[DB] Uklanjam stari stupac 'stable' iz tablice 'logs'...")
-        # Najsigurniji način za uklanjanje stupca u SQLite-u
+        print("[DB] Removing old 'stable' column from 'logs' table...")
+        # The safest way to remove a column in SQLite
         c.execute("CREATE TABLE logs_new AS SELECT id, timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp, soil_raw, soil_voltage, soil_percent, lux FROM logs")
         c.execute("DROP TABLE logs")
         c.execute("ALTER TABLE logs_new RENAME TO logs")
-        print("[DB] Stupac 'stable' uspješno uklonjen.")
+        print("[DB] 'stable' column successfully removed.")
 
     conn.commit()
     conn.close()
 
-# --- Funkcije za rad s logovima senzora ---
+# --- Sensor Log Functions ---
 
 def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux):
-    """Upisuje jedan red podataka od senzora u bazu. Sama upravlja konekcijom."""
+    """Inserts a single row of sensor data into the database.
+
+    This function manages its own database connection.
+
+    Args:
+        timestamp (str): The timestamp of the reading (YYYY-MM-DD HH:MM:SS).
+        air_temp (float): Air temperature from DHT22 sensor.
+        air_humidity (float): Air humidity from DHT22 sensor.
+        soil_temp (float): Soil temperature from DS18B20 sensor.
+        soil_raw (float): Raw ADC value from the soil moisture sensor.
+        soil_voltage (float): Voltage reading from the soil moisture sensor.
+        soil_percent (float): Calculated soil moisture in percent.
+        lux (float): Light level in lux from BH1750 sensor.
+    """
     sql = """
         INSERT INTO logs (timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp,
                           soil_raw, soil_voltage, soil_percent, lux)
@@ -86,12 +120,20 @@ def insert_log(timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_volt
         conn.execute(sql, (timestamp, air_temp, air_humidity, soil_temp, soil_raw, soil_voltage, soil_percent, lux))
         conn.commit()
     except sqlite3.Error as e:
-        print(f"[DB ERROR] Neuspješan upis u log: {e}")
+        print(f"[DB ERROR] Failed to insert log: {e}")
     finally:
         conn.close()
 
 def get_logs(limit=100, order="ASC"):
-    """Dohvaća zadane logove, sortirane po ID-u."""
+    """Fetches sensor logs from the database, sorted by ID.
+
+    Args:
+        limit (int): The maximum number of logs to retrieve.
+        order (str): The sort order, either "ASC" for ascending or "DESC" for descending.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents a log entry.
+    """
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     order_clause = "DESC" if order.upper() == "DESC" else "ASC"
@@ -101,7 +143,16 @@ def get_logs(limit=100, order="ASC"):
     return rows
 
 def get_logs_where(where_clause, params=[]):
-    """Dohvaća logove koji zadovoljavaju dinamički, ali siguran WHERE uvjet."""
+    """Fetches logs that satisfy a dynamic but safe WHERE condition.
+
+    Args:
+        where_clause (str): A string containing the WHERE conditions (e.g., "lux > ? AND soil_percent < ?").
+        params (list): A list of parameters to be safely substituted into the where_clause.
+
+    Returns:
+        A list of dictionaries representing the log entries that match the query,
+        or an empty list if an error occurs.
+    """
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     query = "SELECT * FROM logs"
@@ -113,16 +164,23 @@ def get_logs_where(where_clause, params=[]):
         c.execute(query, params)
         rows = c.fetchall()
     except sqlite3.Error as e:
-        print(f"[DB ERROR] Greška u upitu: {e}")
+        print(f"[DB ERROR] Query failed: {e}")
         rows = []
     finally:
         conn.close()
     return rows
 
 def delete_logs_by_id(ids):
-    """Briše logove na temelju liste ili stringa ID-eva."""
+    """Deletes logs based on a list or string of IDs.
+
+    Args:
+        ids (list|str): A list of integer IDs or a comma-separated string of IDs to delete.
+
+    Returns:
+        A tuple (bool, str) indicating success or failure and a corresponding message.
+    """
     if not ids:
-        return False, "Nema ID-eva za brisanje."
+        return False, "No IDs provided for deletion."
 
     try:
         if isinstance(ids, str):
@@ -130,12 +188,12 @@ def delete_logs_by_id(ids):
         elif isinstance(ids, list):
             id_list = [int(x) for x in ids]
         else:
-            return False, "Neispravan format ID-eva."
+            return False, "Invalid ID format."
     except ValueError:
-        return False, "ID-evi moraju biti brojevi."
+        return False, "IDs must be numbers."
 
     if not id_list:
-        return False, "Nema valjanih ID-eva za brisanje."
+        return False, "No valid IDs to delete."
 
     conn = _get_db_connection()
     c = conn.cursor()
@@ -144,12 +202,18 @@ def delete_logs_by_id(ids):
     deleted_count = c.rowcount
     conn.commit()
     conn.close()
-    return True, f"Obrisano {deleted_count} zapisa."
+    return True, f"Deleted {deleted_count} records."
 
-# --- Funkcije za rad s logovima releja ---
+# --- Relay Log Functions ---
 
 def insert_relay_event(relay_name, action, source="unknown"):
-    """Upisuje ON/OFF događaj releja u bazu."""
+    """Records a relay ON/OFF event in the database.
+
+    Args:
+        relay_name (str): The name of the relay (e.g., "RELAY1").
+        action (str): The action taken ("ON" or "OFF").
+        source (str): The source of the event (e.g., "web", "auto", "manual").
+    """
     conn = _get_db_connection()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sql = "INSERT INTO relay_log (timestamp, relay_name, action, source) VALUES (?, ?, ?, ?)"
@@ -158,7 +222,14 @@ def insert_relay_event(relay_name, action, source="unknown"):
     conn.close()
 
 def get_relay_log(limit=10):
-    """Dohvaća zadnjih N događaja releja."""
+    """Fetches the last N relay events.
+
+    Args:
+        limit (int): The maximum number of relay events to retrieve.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents a relay event.
+    """
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     c.execute("SELECT * FROM relay_log ORDER BY id DESC LIMIT ?", (limit,))
@@ -166,10 +237,13 @@ def get_relay_log(limit=10):
     conn.close()
     return rows
 
-# --- Funkcije za administraciju (za manage.py) ---
+# --- Administration Functions (for manage.py) ---
 
 def get_sql_data():
-    """Ispisuje sve retke iz 'logs' tablice na konzolu."""
+    """Prints all rows from the 'logs' table to the console.
+
+    This is intended for use with the command-line interface in manage.py.
+    """
     conn = _get_db_connection(dict_cursor=True)
     rows = conn.execute("SELECT * FROM logs ORDER BY id").fetchall()
     conn.close()
@@ -177,14 +251,21 @@ def get_sql_data():
         print(dict(row))
 
 def delete_sql_data(ids=None, delete_all=False):
-    """Briše podatke iz 'logs' tablice (namijenjeno za CLI)."""
+    """Deletes data from the 'logs' table (intended for CLI use).
+
+    Args:
+        ids (str, optional): A comma-separated string of IDs or ranges (e.g., "1,3,5-8").
+                             Defaults to None.
+        delete_all (bool, optional): If True, all records from the 'logs' table
+                                     will be deleted. Defaults to False.
+    """
     conn = _get_db_connection()
     c = conn.cursor()
 
     if delete_all:
         c.execute("DELETE FROM logs")
-        c.execute("DELETE FROM sqlite_sequence WHERE name='logs'")
-        print("Svi zapisi iz tablice 'logs' su obrisani.")
+        c.execute("DELETE FROM sqlite_sequence WHERE name='logs'") # Reset autoincrement
+        print("All records from the 'logs' table have been deleted.")
     elif ids:
         try:
             id_list = []
@@ -198,11 +279,11 @@ def delete_sql_data(ids=None, delete_all=False):
 
             placeholders = ",".join("?" for _ in id_list)
             c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
-            print(f"Obrisani zapisi s ID-evima: {id_list}")
+            print(f"Deleted records with IDs: {id_list}")
         except ValueError:
-            print("Greška: ID-evi moraju biti brojevi (npr. 1,3,5-8).")
+            print("Error: IDs must be numbers (e.g., 1,3,5-8).")
     else:
-        print("Nije specificirano što treba obrisati. Koristi --ids ili --all.")
+        print("Nothing specified to delete. Use --ids or --all.")
 
     conn.commit()
     conn.close()
