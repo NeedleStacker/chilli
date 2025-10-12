@@ -433,10 +433,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	async function updateLoggerStatus() {
 		try {
-			const data = await fetchJSON('/api/status');
-			const el = document.getElementById('loggerStatusTXT');
-			el.innerText = data.status;
-			el.style.color = data.status.includes(" u ") ? "green" : "red";
+				const data = await fetchJSON('/api/status');
+				const el = document.getElementById('loggerStatusTXT');
+				el.innerText = data.status;
+				// Show green when status contains 'RUNNING', otherwise red
+				const loggerLabel = document.getElementById('loggerStatus');
+				if (data.status && data.status.startsWith('RUNNING')) {
+					el.style.color = 'green';
+					if (loggerLabel) loggerLabel.style.color = 'green';
+				} else {
+					el.style.color = 'red';
+					if (loggerLabel) loggerLabel.style.color = 'red';
+				}
 		} catch (e) {
 			const el = document.getElementById('loggerStatusTXT');
 			el.innerText = "Greška pri dohvaćanju statusa";

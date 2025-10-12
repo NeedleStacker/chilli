@@ -20,7 +20,6 @@ app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
 
 # --- Startup initialization (deferred) ---
-@app.before_first_request
 def _app_startup():
     """Initialize hardware and database at runtime.
 
@@ -39,6 +38,38 @@ def _app_startup():
 
     # Register cleanup after successful (or attempted) initialization
     atexit.register(hardware.cleanup)
+
+
+# Register the startup handler if Flask supports before_first_request at runtime.
+try:
+    if hasattr(app, 'before_first_request'):
+        app.before_first_request(_app_startup)
+except Exception:
+    # If the Flask object doesn't support before_first_request (older/stripped
+    # builds), we'll call _app_startup() manually in __main__ before starting.
+    pass
+
+
+# --- Backwards-compatible immediate initialization ---
+# By default (to match older behavior) initialize hardware and DB at import
+# time so routes can assume GPIO/I2C are ready. Set DEFER_HARDWARE_INIT=1 to
+# opt into deferred startup (for CI or special test scenarios).
+if os.environ.get('DEFER_HARDWARE_INIT') != '1':
+    try:
+        hardware.initialize()
+    except Exception as e:
+        print(f"[WARN] hardware.initialize() failed at import: {e}")
+
+    try:
+        database.init_db()
+    except Exception as e:
+        print(f"[WARN] database.init_db() failed at import: {e}")
+
+    # Ensure cleanup is registered (if not already)
+    try:
+        atexit.register(hardware.cleanup)
+    except Exception:
+        pass
 
 # --- Logger Process Management (delegated) ---
 _logger_mgr = process_manager.init_logger_manager(BASE_DIR)
@@ -106,7 +137,7 @@ def api_run_stop():
 def api_run_status():
     """API endpoint to get the status of the logger process."""
     running = is_logger_running()
-    pid = logger_process.pid if running else None
+    pid = process_manager.get_logger_pid() if running else None
     status_text = f"RUNNING @ {time.strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})" if running else "STOPPED"
     return jsonify({"status": status_text})
 

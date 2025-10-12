@@ -77,3 +77,12 @@ def init_logger_manager(base_dir, logger_script_name="logger.py", logger_logfile
 
 def get_logger_manager():
     return _logger_mgr
+
+def get_logger_pid():
+    """Return the PID of the managed logger process or None."""
+    if _logger_mgr and _logger_mgr._proc:
+        try:
+            return _logger_mgr._proc.pid
+        except Exception:
+            return None
+    return None
