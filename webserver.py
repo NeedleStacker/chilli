@@ -10,6 +10,7 @@ import relays
 import sensors
 import database
 from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
+import process_manager
 
 # Flask
 from flask import Flask, render_template, jsonify, request
@@ -39,77 +40,31 @@ def _app_startup():
     # Register cleanup after successful (or attempted) initialization
     atexit.register(hardware.cleanup)
 
-# --- Logger Process Management ---
-logger_lock = threading.Lock()
-logger_process = None
-logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
+# --- Logger Process Management (delegated) ---
+_logger_mgr = process_manager.init_logger_manager(BASE_DIR)
 
 def is_logger_running():
-    """Checks if the logger.py subprocess is running.
-
-    Returns:
-        bool: True if the logger process is active, False otherwise.
-    """
-    global logger_process
-    if logger_process and logger_process.poll() is None:
-        return True
-    logger_process = None
-    return False
+    mgr = process_manager.get_logger_manager()
+    return mgr.is_running() if mgr else False
 
 def start_logger():
-    """Starts logger.py as a subprocess.
-
-    Returns:
-        A tuple (bool, str) indicating success and a message.
-    """
-    global logger_process
-    with logger_lock:
-        if is_logger_running():
-            return False, "Logger is already running."
-
-        logger_script = os.path.join(BASE_DIR, "logger.py")
-        if not os.path.isfile(logger_script):
-            return False, "logger.py script not found."
-
-        # Use the 'run' command defined in logger.py
-        cmd = ["python3", logger_script, "run"]
-        with open(logger_logfile, "a") as logfile:
-            proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
-
-        logger_process = proc
-        time.sleep(0.5) # Give the process time to start or fail
-
-        if is_logger_running():
-            return True, f"Logger started with PID={proc.pid}."
-        else:
-            return False, "Failed to start logger. Check the log file."
+    mgr = process_manager.get_logger_manager()
+    if not mgr:
+        return False, "Logger manager not initialized."
+    return mgr.start()
 
 def stop_logger():
-    """Stops the logger.py subprocess.
-
-    Returns:
-        A tuple (bool, str) indicating success and a message.
-    """
-    global logger_process
-    with logger_lock:
-        if not is_logger_running():
-            return False, "Logger was not running."
-
+    mgr = process_manager.get_logger_manager()
+    if not mgr:
+        return False, "Logger manager not initialized."
+    ok, msg = mgr.stop()
+    # Clean up the status file
+    if os.path.exists(STATUS_FILE):
         try:
-            pid = logger_process.pid
-            logger_process.terminate()
-            logger_process.wait(timeout=5) # Wait up to 5 seconds
-            print(f"Logger process (PID: {pid}) stopped (terminate).")
-        except subprocess.TimeoutExpired:
-            logger_process.kill()
-            print(f"Logger process (PID: {pid}) did not respond, sent kill signal.")
-
-        logger_process = None
-        # Clean up the status file
-        if os.path.exists(STATUS_FILE):
             os.remove(STATUS_FILE)
-
-        return True, "Logger stopped."
+        except Exception:
+            pass
+    return ok, msg
 
 # ---- HTML Page Routes ----
 @app.route("/")
