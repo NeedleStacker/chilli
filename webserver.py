@@ -58,7 +58,7 @@ def start_logger():
             return False, "logger.py script not found."
 
         # Use the 'run' command defined in logger.py
-        cmd = ["python3", logger_script]
+        cmd = ["python3", logger_script, "run"]
         with open(logger_logfile, "a") as logfile:
             proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
 
