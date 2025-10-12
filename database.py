@@ -137,14 +137,8 @@ def get_logs(limit=100, order="ASC"):
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     order_clause = "DESC" if order.upper() == "DESC" else "ASC"
-    # Select with aliases so templates and JS can use short names
-    sql = f"SELECT id, timestamp, dht22_air_temp AS air_temp, dht22_humidity AS air_humidity, ds18b20_soil_temp AS soil_temp, soil_raw, soil_voltage, soil_percent, lux, (0) AS stable FROM logs ORDER BY id {order_clause} LIMIT ?"
-    try:
-        c.execute(sql, (limit,))
-        rows = c.fetchall()
-    except Exception as e:
-        print(f"[DB ERROR] get_logs failed: {e}")
-        rows = []
+    c.execute(f"SELECT * FROM logs ORDER BY id {order_clause} LIMIT ?", (limit,))
+    rows = c.fetchall()
     conn.close()
     return rows
 
@@ -161,8 +155,7 @@ def get_logs_where(where_clause, params=[]):
     """
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
-    # Use same aliases as get_logs
-    query = "SELECT id, timestamp, dht22_air_temp AS air_temp, dht22_humidity AS air_humidity, ds18b20_soil_temp AS soil_temp, soil_raw, soil_voltage, soil_percent, lux, (0) AS stable FROM logs"
+    query = "SELECT * FROM logs"
     if where_clause:
         query += f" WHERE {where_clause}"
     query += " ORDER BY id ASC"
