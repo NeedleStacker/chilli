@@ -121,7 +121,7 @@ def all_data_page():
 
 # ---- API Routes ----
 
-@app.route("/api/run/start", methods=["POST"])
+@app.route("/api/run/start_first", methods=["POST"])
 def api_run_start():
     """API endpoint to start the logger process."""
     ok, msg = start_logger()
@@ -133,12 +133,13 @@ def api_run_stop():
     ok, msg = stop_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
-@app.route("/api/run/status", methods=["GET"])
+@app.route("/api/status", methods=["GET"])
 def api_run_status():
     """API endpoint to get the status of the logger process."""
     running = is_logger_running()
     pid = logger_process.pid if running else None
-    return jsonify({"running": running, "pid": pid})
+    status_text = f"RUNNING @ {time.strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})" if running else "STOPPED"
+    return jsonify({"status": status_text})
 
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
@@ -238,13 +239,15 @@ def api_relay_toggle():
     """API endpoint to toggle the state of a relay."""
     try:
         data = request.get_json()
-        relay_num = data.get("relay", type=int)
-        state = data.get("state", type=bool)
+        print(f"Received relay toggle request: {data}")  # Debugging line
+        relay_num = data.get("relay")
+        state = data.get("state")
+
+        # Basic validation
+        if relay_num not in [1, 2] or not isinstance(state, bool):
+            return jsonify({"ok": False, "error": "Invalid input"}), 400
 
         pin_map = {1: RELAY1, 2: RELAY2}
-        if relay_num not in pin_map:
-            return jsonify({"ok": False, "error": "Invalid relay number"}), 400
-
         pin = pin_map[relay_num]
         relay_name = f"RELAY{relay_num}"
 
@@ -254,9 +257,10 @@ def api_relay_toggle():
         print(f"[WEB] Relay {relay_name} switched to {'ON' if state else 'OFF'}.")
         return jsonify({"ok": True, "relay": relay_name, "state": "ON" if state else "OFF"})
     except Exception as e:
+        print(f"[ERROR] api_relay_toggle failed: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/relay_log", methods=["GET"])
+@app.route("/relay_log_data", methods=["GET"])
 def api_relay_log():
     """API endpoint to get the latest relay event logs.
 
@@ -265,7 +269,19 @@ def api_relay_log():
     """
     limit = request.args.get("limit", 10, type=int)
     log_data = database.get_relay_log(limit=limit)
-    return jsonify(log_data)
+
+    # The frontend expects a different format, so we transform the data here
+    transformed_data = {"RELAY1": [], "RELAY2": []}
+    for row in log_data:
+        relay_name = row['relay_name']
+        if relay_name in transformed_data:
+            transformed_data[relay_name].append({
+                "t": row['timestamp'].split(" ")[1],
+                "v": 1 if row['action'] == 'ON' else 0,
+                "action": row['action'],
+                "source": row['source']
+            })
+    return jsonify(transformed_data)
 
 @app.route("/logs/file")
 def get_logfile():
