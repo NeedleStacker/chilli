@@ -14,16 +14,30 @@ from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
 # Flask
 from flask import Flask, render_template, jsonify, request
 
-# --- Initialization ---
-# Initialize hardware and database before any logic runs
-hardware.initialize()
-database.init_db()
-
 # Create Flask application
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
-# Ensure GPIO resources are cleaned up on application exit
-atexit.register(hardware.cleanup)
+
+# --- Startup initialization (deferred) ---
+@app.before_first_request
+def _app_startup():
+    """Initialize hardware and database at runtime.
+
+    This avoids side-effects at import time (useful for analysis, tests,
+    and CI on non-RPi hosts). It also registers cleanup for atexit.
+    """
+    try:
+        hardware.initialize()
+    except Exception as e:
+        print(f"[WARN] hardware.initialize() failed during startup: {e}")
+
+    try:
+        database.init_db()
+    except Exception as e:
+        print(f"[WARN] database.init_db() failed during startup: {e}")
+
+    # Register cleanup after successful (or attempted) initialization
+    atexit.register(hardware.cleanup)
 
 # --- Logger Process Management ---
 logger_lock = threading.Lock()
