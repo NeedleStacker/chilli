@@ -160,3 +160,10 @@ def run_logger():
 # The logger.py file is now a clean module.
 # To run the logger, use `webserver.py`.
 # For testing and administration, use `manage.py`.
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Chili Plant Logger")
+    parser.add_argument("command", choices=["run"], help="Command to execute")
+    args = parser.parse_args()
+
+    if args.command == "run":
+        run_logger()
