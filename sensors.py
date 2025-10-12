@@ -50,6 +50,18 @@ def read_soil_raw():
     Returns:
         A tuple (raw_value, voltage) or (None, None) if the reading fails.
     """
+    # If i2c hasn't been initialized yet, try a lazy init. This helps when
+    # the webserver didn't run the global startup handler yet.
+    if hardware.i2c is None:
+        try:
+            print("[WARN] I2C bus not initialized - attempting lazy hardware.initialize()")
+            hardware.initialize()
+            # give hardware a short moment to initialize
+            import time as _time
+            _time.sleep(0.1)
+        except Exception as e:
+            print(f"[ERROR] Lazy hardware.initialize() failed: {e}")
+
     if hardware.i2c is None:
         print("[ERROR] I2C bus not initialized. Cannot read moisture sensor.")
         return None, None

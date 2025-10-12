@@ -103,6 +103,12 @@ def run_logger():
     It also handles cleanup (removing the status file) on exit.
     """
     print("Logger is starting...")
+    # Initialize hardware (ensure I2C/1-Wire are available for sensors)
+    try:
+        hardware.initialize()
+    except Exception as e:
+        print(f"[WARN] hardware.initialize() failed in logger: {e}")
+
     # Ensure the database and tables exist before the main loop
     database.init_db()
     os.makedirs(LOGS_DIR, exist_ok=True)

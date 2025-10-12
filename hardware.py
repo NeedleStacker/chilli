@@ -1,7 +1,26 @@
-import board
-import busio
-import RPi.GPIO as GPIO
 import os
+
+# Support a development stub to allow running on non-RPi hosts
+USE_STUB = os.environ.get('USE_STUB_HARDWARE') == '1'
+
+# Try to import hardware libraries lazily; tests may inject a fake `hardware`
+# module via `tests/conftest.py` so keep top-level imports minimal.
+try:
+    if not USE_STUB:
+        import board  # type: ignore
+        import busio  # type: ignore
+        import RPi.GPIO as GPIO  # type: ignore
+    else:
+        # We'll use the dev stub instead of real hardware
+        from dev_stub_hardware import initialize as _stub_init, cleanup as _stub_cleanup
+        board = None
+        busio = None
+        GPIO = None
+except Exception:
+    # Don't raise here; defer errors until initialize() so module import is safe
+    board = None
+    busio = None
+    GPIO = None
 
 # Import pin and setting configurations
 from config import RELAY1, RELAY2, DHT_PIN
@@ -16,13 +35,39 @@ def initialize(app_mode='main'):
     loads necessary kernel modules for 1-Wire communication (for DS18B20),
     and initializes the I2C bus.
 
-    Args:
-        app_mode (str): The mode in which the application is running.
-                        This argument is currently not used but is intended
-                        for future differentiation between modes like 'main'
-                        (full hardware access) and 'util' (limited access).
+    If the required platform libraries are not available, this function will
+    print a helpful message and leave `i2c` as None. For CI/dev on non-RPi
+    hosts, set the environment variable `USE_STUB_HARDWARE=1` to use the
+    `dev_stub_hardware.py` no-op implementation.
     """
-    global i2c
+    global i2c, board, busio, GPIO
+
+    if USE_STUB:
+        # Prefer the dev stub when requested
+        try:
+            from dev_stub_hardware import initialize as _stub_init
+            _stub_init(app_mode=app_mode)
+            i2c = None
+            return
+        except Exception as e:
+            print(f"[HARDWARE] Failed to initialize dev stub: {e}")
+
+    # If platform modules were not importable earlier, attempt to import now
+    if board is None or busio is None or GPIO is None:
+        try:
+            import board as _board  # type: ignore
+            import busio as _busio  # type: ignore
+            import RPi.GPIO as _GPIO  # type: ignore
+            board = _board
+            busio = _busio
+            GPIO = _GPIO
+        except Exception as e:
+            print("[ERROR] Hardware libraries not available."
+                  " Install 'adafruit-blinka' (pip3 install adafruit-blinka)"
+                  " or set USE_STUB_HARDWARE=1 to use the dev stub.")
+            print(f"[ERROR] Detailed import error: {e}")
+            return
+
     print("[HARDWARE] Initializing hardware...")
 
     # --- GPIO ---
@@ -60,5 +105,17 @@ def cleanup():
     This function should be called on application exit to release all GPIO
     pins and prevent warnings or conflicts on subsequent runs.
     """
+    if USE_STUB:
+        try:
+            from dev_stub_hardware import cleanup as _stub_cleanup
+            _stub_cleanup()
+            return
+        except Exception:
+            pass
+
+    if GPIO is None:
+        print("[HARDWARE] GPIO not available; skipping cleanup.")
+        return
+
     print("[HARDWARE] Cleaning up GPIO resources.")
     GPIO.cleanup()
