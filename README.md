@@ -1,1 +1,2 @@
 # chilli
+Automatic chilies
