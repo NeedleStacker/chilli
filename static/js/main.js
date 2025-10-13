@@ -1,15 +1,15 @@
-/* main.js - glavni JS logika za index.html */
-/* Ovaj fajl mora se učitati nakon Chart.js (CDN) i nakon što su HTML elementi u DOM-u. */
+/* main.js - Main JS logic for index.html */
+/* This file must be loaded after Chart.js (CDN) and after the HTML elements are in the DOM. */
 
 document.addEventListener("DOMContentLoaded", () => {
 
-	// ------- helperi -------
+	// ------- Helpers -------
 	function formatTime(ts) {
 		if (!ts) return "";
-		const [date, time] = ts.split('_');
+		const [date, time] = ts.split(' ');
 		if (!date || !time) return ts;
 		const [y, m, d] = date.split('-');
-		const [hh, mm] = time.split('-');
+		const [hh, mm, ss] = time.split(':');
 		return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
 	}
 
@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	};
 
-	// ------- inicijalizacija chartova -------
+	// ------- Chart initialization -------
 	const ctxTemp = document.getElementById('tempChart').getContext('2d');
 	const tempChart = new Chart(ctxTemp, {
 		type: 'line',
@@ -187,21 +187,21 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 
-	// ------- Grafikon paljenja/gasenja releja (signal) -------
+	// ------- Relay Signal Chart -------
 	let relayChart = null;
 	async function loadRelayChart() {
-		const res = await fetch('/relay_log_data');
-		const data = await res.json();
+		const data = await fetchJSON('/relay_log_data');
 
-		if (!data || (!data.RELAY1?.length && !data.RELAY2?.length)) return;
+		if (!data || !data.length) return;
 
-		const labels = [...new Set([
-			...data.RELAY1.map(x => x.t),
-			...data.RELAY2.map(x => x.t)
-		])].sort();
+		// Separate data for each relay
+		const relay1Data = data.filter(d => d.relay === 'RELAY1');
+		const relay2Data = data.filter(d => d.relay === 'RELAY2');
 
-		const relay1 = data.RELAY1.map(d => d.v);
-		const relay2 = data.RELAY2.map(d => d.v);
+		const labels = [...new Set(data.map(x => x.t.split(' ')[1]))].sort();
+
+		const relay1 = relay1Data.map(d => d.v);
+		const relay2 = relay2Data.map(d => d.v);
 
 		const offset = 0.05;
 		const relay1Display = relay1.map(v => v ? 1 : offset);
@@ -222,8 +222,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			if (lastOnIdx === -1) return null;
 			// compute seconds difference using today date (HH:MM:SS -> Date)
-			const onTime = arr[lastOnIdx].t;
-			const offTime = lastOffIdx === -1 ? null : arr[lastOffIdx].t;
+			const onTime = arr[lastOnIdx].t.split(' ')[1];
+			const offTime = lastOffIdx === -1 ? null : arr[lastOffIdx].t.split(' ')[1];
 			try {
 				const nowDate = new Date();
 				const parseT = (hhmmss) => {
@@ -243,14 +243,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 		};
 
-		const d1 = calcDuration(data.RELAY1);
-		const d2 = calcDuration(data.RELAY2);
+		const d1 = calcDuration(relay1Data);
+		const d2 = calcDuration(relay2Data);
 
 		const durEl = document.getElementById('relayDurations');
 		if (durEl) {
 			let html = "";
-			if (d1) html += `Relej 1 bio uključen <b>${d1}s</b>`;
-			if (d2) html += (html ? " &nbsp;&nbsp;|&nbsp;&nbsp; " : "") + `Relej 2 bio uključen <b>${d2}s</b>`;
+			if (d1) html += `Relay 1 was on for <b>${d1}s</b>`;
+			if (d2) html += (html ? " &nbsp;&nbsp;|&nbsp;&nbsp; " : "") + `Relay 2 was on for <b>${d2}s</b>`;
 			durEl.innerHTML = html;
 		}
 
@@ -261,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				data: {
 					labels: labels,
 					datasets: [{
-							label: 'Relej 1',
+							label: 'Relay 1',
 							data: relay1Display,
 							borderColor: 'rgb(255, 99, 132)',
 							backgroundColor: 'rgba(255, 99, 132, 0.25)',
@@ -271,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
 							borderWidth: 3
 						},
 						{
-							label: 'Relej 2',
+							label: 'Relay 2',
 							data: relay2Display,
 							borderColor: 'rgb(54, 162, 235)',
 							backgroundColor: 'rgba(54, 162, 235, 0.25)',
@@ -293,8 +293,8 @@ document.addEventListener("DOMContentLoaded", () => {
 							ticks: {
 								stepSize: 0.5,
 								callback: v => {
-									if (v === 1) return 'Relej 1 ON';
-									if (v === 0.5) return 'Relej 2 ON';
+									if (v === 1) return 'Relay 1 ON';
+									if (v === 0.5) return 'Relay 2 ON';
 									return '';
 								}
 							},
@@ -303,13 +303,13 @@ document.addEventListener("DOMContentLoaded", () => {
 							},
 							title: {
 								display: true,
-								text: 'Stanja releja'
+								text: 'Relay States'
 							}
 						},
 						x: {
 							title: {
 								display: true,
-								text: 'Vrijeme'
+								text: 'Time'
 							},
 							grid: {
 								color: 'rgba(180,180,180,0.1)'
@@ -335,10 +335,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	} // loadRelayChart
 
 
-	// ------- tablica relej logova (sada očekuje array sorted by time) -------
+	// ------- Relay Log Table -------
 	async function loadRelayLogTable() {
-		const res = await fetch('/relay_log_data');
-		const data = await res.json();
+		const data = await fetchJSON('/relay_log_data');
 
 		const tbody = document.querySelector('#relayLogTable tbody');
 		tbody.innerHTML = '';
@@ -346,7 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		(data || []).forEach(entry => {
 			const tr = document.createElement('tr');
 			tr.innerHTML = `
-        <td>${entry.t}</td>
+        <td>${formatTime(entry.t)}</td>
         <td>${entry.relay}</td>
         <td>
           <span class="badge ${entry.v ? 'bg-success' : 'bg-secondary'}">
@@ -361,31 +360,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	window.loadRelayLogTable = loadRelayLogTable; // exposable if needed
 
-	// ------- ostali handleri i funkcije -------
+	// ------- Other handlers and functions -------
 	async function updateChartAndTable() {
 		const rows = await fetchJSON('/api/logs?limit=100');
 
 		const labels = rows.map(r => formatTime(r.timestamp));
-		const airT = rows.map(r => r.air_temp !== null ? Number(r.air_temp) : null);
-		const airH = rows.map(r => r.air_humidity !== null ? Number(r.air_humidity) : null);
-		const soilT = rows.map(r => r.soil_temp !== null ? Number(r.soil_temp) : null);
+		const airT = rows.map(r => r.dht22_air_temp !== null ? Number(r.dht22_air_temp) : null);
+		const airH = rows.map(r => r.dht22_humidity !== null ? Number(r.dht22_humidity) : null);
+		const soilT = rows.map(r => r.ds18b20_soil_temp !== null ? Number(r.ds18b20_soil_temp) : null);
 		const soilP = rows.map(r => r.soil_percent !== null ? Number(r.soil_percent) : null);
 		const lux = rows.map(r => r.lux !== null ? Number(r.lux) / 100.0 : null);
 
-		// tablica logs
+		// logs table
 		const tbody = document.getElementById('logsBody');
 		tbody.innerHTML = "";
 
-		for (let i = rows.length - 1; i >= 0; i--) {
+		for (let i = 0; i < rows.length; i++) {
 			const r = rows[i];
 			const tr = document.createElement('tr');
-			if (r.stable === 0) tr.classList.add('unstable');
 			tr.innerHTML = `
         <td>${r.id}</td>
         <td>${formatTime(r.timestamp)}</td>
-        <td>${r.air_temp ?? ''}</td>
-        <td>${r.air_humidity ?? ''}</td>
-        <td>${r.soil_temp ?? ''}</td>
+        <td>${r.dht22_air_temp ?? ''}</td>
+        <td>${r.dht22_humidity ?? ''}</td>
+        <td>${r.ds18b20_soil_temp ?? ''}</td>
         <td>${r.soil_percent ?? ''}</td>
         <td>${r.lux ?? ''}</td>`;
 			tbody.appendChild(tr);
@@ -436,10 +434,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			const data = await fetchJSON('/api/status');
 			const el = document.getElementById('loggerStatusTXT');
 			el.innerText = data.status;
-			el.style.color = data.status.includes(" u ") ? "green" : "red";
+			el.style.color = data.status.includes("RUNNING") ? "green" : "red";
 		} catch (e) {
 			const el = document.getElementById('loggerStatusTXT');
-			el.innerText = "Greška pri dohvaćanju statusa";
+			el.innerText = "Error fetching status";
 			el.style.color = "red";
 		}
 	}
@@ -449,13 +447,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		const res = await fetch('/api/run/start_first', {
 			method: 'POST'
 		}).then(r => r.json());
-		document.getElementById('loggerStatus').innerText = res.running ? "AKTIVAN" : "STOPIRAN";
+		document.getElementById('loggerStatus').innerText = res.running ? "ACTIVE" : "STOPPED";
 	});
 	document.getElementById('btnStop').addEventListener('click', async () => {
 		const res = await fetch('/api/run/stop', {
 			method: 'POST'
 		}).then(r => r.json());
-		document.getElementById('loggerStatus').innerText = res.running ? "AKTIVAN" : "STOPIRAN";
+		document.getElementById('loggerStatus').innerText = res.running ? "ACTIVE" : "STOPPED";
 	});
 
 	document.getElementById('btnDeleteRows').addEventListener('click', async () => {
@@ -463,7 +461,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const statusEl = document.getElementById('deleteStatus');
 
 		if (!input) {
-			statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'.";
+			statusEl.innerText = "Enter IDs to delete or 'all'.";
 			return;
 		}
 
@@ -473,7 +471,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			ids: input
 		};
 
-		const confirmDelete = confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`);
+		const confirmDelete = confirm(`Are you sure you want to delete ${input === "all" ? "ALL rows" : "these rows: " + input}?`);
 		if (!confirmDelete) return;
 
 		try {
@@ -487,16 +485,16 @@ document.addEventListener("DOMContentLoaded", () => {
 			const data = await res.json();
 
 			if (data.ok) {
-				statusEl.innerText = `Obrisano: ${data.deleted === "all" ? "svi redovi" : data.deleted + " redova."}`;
-				await updateChartAndTable(); // osvježi tablicu i grafove
+				statusEl.innerText = `Deleted: ${data.deleted === "all" ? "all rows" : data.deleted + " rows."}`;
+				await updateChartAndTable(); // refresh table and charts
 			} else {
-				statusEl.innerText = `Greška: ${data.msg || data.error}`;
+				statusEl.innerText = `Error: ${data.msg || data.error}`;
 			}
 		} catch (e) {
-			statusEl.innerText = "Greška pri brisanju: " + e.message;
+			statusEl.innerText = "Error deleting: " + e.message;
 		}
 	});
-	
+
 	document.getElementById('btn-ads').addEventListener('click', function() {
         readSensor('ads');
     });
@@ -517,7 +515,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		toggleRelay(2);
 	});
 
-	// učitaj stvari jednom nakon DOMContentLoaded
+	// Load things once after DOMContentLoaded
 	updateLoggerStatus();
 
 	updateChartAndTable();

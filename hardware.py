@@ -3,53 +3,62 @@ import busio
 import RPi.GPIO as GPIO
 import os
 
-# Import pinova i postavki iz glavne konfiguracije
+# Import pin and setting configurations
 from config import RELAY1, RELAY2, DHT_PIN
 
-# Globalna varijabla za I2C, kako bi je drugi moduli mogli koristiti
+# Global I2C variable so other modules can use it
 i2c = None
 
 def initialize(app_mode='main'):
-    """
-    Centralna funkcija za inicijalizaciju hardvera.
-    'main' mode: za logger ili webserver koji koriste sve komponente.
-    'util': za skripte koje ne trebaju sve (npr. samo GPIO).
+    """Initializes the hardware components for the Raspberry Pi.
+
+    This function sets up the GPIO mode, configures relay pins as outputs,
+    loads necessary kernel modules for 1-Wire communication (for DS18B20),
+    and initializes the I2C bus.
+
+    Args:
+        app_mode (str): The mode in which the application is running.
+                        This argument is currently not used but is intended
+                        for future differentiation between modes like 'main'
+                        (full hardware access) and 'util' (limited access).
     """
     global i2c
-    print("[HARDWARE] Inicijalizacija hardvera...")
+    print("[HARDWARE] Initializing hardware...")
 
     # --- GPIO ---
-    # Koristi se BCM numeriranje pinova
+    # Use BCM pin numbering
     GPIO.setmode(GPIO.BCM)
 
-    # --- Releji ---
-    # Postavi pinove kao izlazne i ugasi ih (LOW-trigger releji su OFF na HIGH)
+    # --- Relays ---
+    # Set pins as outputs and turn them off (LOW-trigger relays are OFF at HIGH)
     GPIO.setup(RELAY1, GPIO.OUT, initial=GPIO.HIGH)
     GPIO.setup(RELAY2, GPIO.OUT, initial=GPIO.HIGH)
-    print(f"[HARDWARE] Releji {RELAY1}, {RELAY2} postavljeni kao OUT, stanje: OFF.")
+    print(f"[HARDWARE] Relays {RELAY1}, {RELAY2} set as OUT, state: OFF.")
 
     # --- DS18B20 ---
-    # Učitaj module kernela potrebne za 1-Wire
+    # Load kernel modules required for 1-Wire
     os.system('modprobe w1-gpio')
     os.system('modprobe w1-therm')
-    print("[HARDWARE] 1-Wire moduli (w1-gpio, w1-therm) učitani.")
+    print("[HARDWARE] 1-Wire modules (w1-gpio, w1-therm) loaded.")
 
     # --- I2C ---
-    # Inicijaliziraj I2C sabirnicu samo jednom
+    # Initialize the I2C bus only once
     if i2c is None:
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
-            print("[HARDWARE] I2C sabirnica inicijalizirana.")
+            print("[HARDWARE] I2C bus initialized.")
         except Exception as e:
-            print(f"[ERROR] Neuspjela inicijalizacija I2C: {e}")
+            print(f"[ERROR] Failed to initialize I2C: {e}")
             i2c = None
 
-    print("[HARDWARE] Inicijalizacija završena.")
+    print("[HARDWARE] Initialization complete.")
 
 
 def cleanup():
+    """Cleans up GPIO resources.
+
+    This function should be called on application exit to release all GPIO
+    pins and prevent warnings or conflicts on subsequent runs.
     """
-    Čisti GPIO resurse. Pozvati na kraju izvođenja programa.
-    """
-    print("[HARDWARE] Čišćenje GPIO resursa.")
+    print("[HARDWARE] Cleaning up GPIO resources.")
     GPIO.cleanup()

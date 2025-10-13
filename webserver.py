@@ -4,7 +4,7 @@ import threading
 import time
 import atexit
 
-# Moduli projekta
+# Project modules
 import hardware
 import relays
 import sensors
@@ -14,24 +14,28 @@ from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
 # Flask
 from flask import Flask, render_template, jsonify, request
 
-# --- Inicijalizacija ---
-# Inicijaliziraj hardver i bazu podataka prije pokretanja bilo kakve logike
+# --- Initialization ---
+# Initialize hardware and database before any logic runs
 hardware.initialize()
 database.init_db()
 
-# Kreiraj Flask aplikaciju
+# Create Flask application
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
-# Postavi da se GPIO resursi očiste pri izlasku iz aplikacije
+# Ensure GPIO resources are cleaned up on application exit
 atexit.register(hardware.cleanup)
 
-# --- Upravljanje logger procesom ---
+# --- Logger Process Management ---
 logger_lock = threading.Lock()
 logger_process = None
 logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
 def is_logger_running():
-    """Provjerava radi li logger.py podproces."""
+    """Checks if the logger.py subprocess is running.
+
+    Returns:
+        bool: True if the logger process is active, False otherwise.
+    """
     global logger_process
     if logger_process and logger_process.poll() is None:
         return True
@@ -39,57 +43,70 @@ def is_logger_running():
     return False
 
 def start_logger():
-    """Pokreće logger.py kao podproces."""
+    """Starts logger.py as a subprocess.
+
+    Returns:
+        A tuple (bool, str) indicating success and a message.
+    """
     global logger_process
     with logger_lock:
         if is_logger_running():
-            return False, "Logger je već pokrenut."
+            return False, "Logger is already running."
 
         logger_script = os.path.join(BASE_DIR, "logger.py")
         if not os.path.isfile(logger_script):
-            return False, "logger.py skripta nije pronađena."
+            return False, "logger.py script not found."
 
-        # Koristi 'run' naredbu definiranu u logger.py
+        # Use the 'run' command defined in logger.py
         cmd = ["python3", logger_script, "run"]
         with open(logger_logfile, "a") as logfile:
             proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
 
         logger_process = proc
-        time.sleep(0.5) # Daj vremena procesu da se pokrene ili sruši
+        time.sleep(0.5) # Give the process time to start or fail
 
         if is_logger_running():
-            return True, f"Logger pokrenut s PID={proc.pid}."
+            return True, f"Logger started with PID={proc.pid}."
         else:
-            return False, "Neuspješno pokretanje loggera. Provjerite log datoteku."
+            return False, "Failed to start logger. Check the log file."
 
 def stop_logger():
-    """Zaustavlja logger.py podproces."""
+    """Stops the logger.py subprocess.
+
+    Returns:
+        A tuple (bool, str) indicating success and a message.
+    """
     global logger_process
     with logger_lock:
         if not is_logger_running():
-            return False, "Logger nije bio pokrenut."
+            return False, "Logger was not running."
 
         try:
             pid = logger_process.pid
             logger_process.terminate()
-            logger_process.wait(timeout=5) # Pričekaj do 5 sekundi
-            print(f"Logger proces (PID: {pid}) zaustavljen (terminate).")
+            logger_process.wait(timeout=5) # Wait up to 5 seconds
+            print(f"Logger process (PID: {pid}) stopped (terminate).")
         except subprocess.TimeoutExpired:
             logger_process.kill()
-            print(f"Logger proces (PID: {pid}) nije odgovarao, poslan kill.")
+            print(f"Logger process (PID: {pid}) did not respond, sent kill signal.")
 
         logger_process = None
-        # Očisti statusnu datoteku
+        # Clean up the status file
         if os.path.exists(STATUS_FILE):
             os.remove(STATUS_FILE)
 
-        return True, "Logger zaustavljen."
+        return True, "Logger stopped."
 
-# ---- Rute za stranice (HTML) ----
+# ---- HTML Page Routes ----
 @app.route("/")
 def index():
-    # Dohvati zadnjih 50 zapisa za prikaz na početnoj stranici
-    # Ova logika će biti premještena u database.py
+    """Renders the main dashboard page.
+
+    Fetches the last 50 log entries and current relay states to display.
+
+    Returns:
+        The rendered index.html template.
+    """
     logs = database.get_logs(limit=50, order="DESC")
     return render_template("index.html",
                            logs=logs,
@@ -99,37 +116,55 @@ def index():
 
 @app.route("/all_data")
 def all_data_page():
+    """Renders the page for viewing all data."""
     return render_template("all_data.html")
 
-# ---- API Rute ----
+# ---- API Routes ----
 
-@app.route("/api/run/start", methods=["POST"])
+@app.route("/api/run/start_first", methods=["POST"])
 def api_run_start():
+    """API endpoint to start the logger process."""
     ok, msg = start_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
 @app.route("/api/run/stop", methods=["POST"])
 def api_run_stop():
+    """API endpoint to stop the logger process."""
     ok, msg = stop_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
-@app.route("/api/run/status", methods=["GET"])
+@app.route("/api/status", methods=["GET"])
 def api_run_status():
+    """API endpoint to get the status of the logger process."""
     running = is_logger_running()
     pid = logger_process.pid if running else None
-    return jsonify({"running": running, "pid": pid})
+    status_text = f"RUNNING @ {time.strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})" if running else "STOPPED"
+    return jsonify({"status": status_text})
 
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
+    """API endpoint to get the latest sensor logs.
+
+    Query Parameters:
+        limit (int): The number of logs to return. Defaults to 100.
+
+    Returns:
+        A JSON response with a list of log entries.
+    """
     limit = request.args.get("limit", 100, type=int)
-    # Logika će biti prebačena u database.py
     rows = database.get_logs(limit=limit, order="DESC")
     return jsonify(rows)
 
 @app.route("/api/logs/all", methods=["GET"])
 def api_logs_all():
-    # --- SIGURNOSNI POPRAVAK (SQL Injection) ---
-    # Dopušteni stupci za filtriranje kako bi se spriječilo ubacivanje proizvoljnog SQL-a
+    """API endpoint to get all logs with optional filtering.
+
+    This endpoint allows filtering by sensor values using query parameters like
+    `lux_gt=100` or `soil_percent_lt=50`.
+
+    Returns:
+        A JSON response with a list of filtered log entries.
+    """
     allowed_columns = {
         "air_temp": "dht22_air_temp",
         "air_humidity": "dht22_humidity",
@@ -141,7 +176,7 @@ def api_logs_all():
     query_params = []
     where_conditions = []
 
-    # Primjer upita: /api/logs/all?lux_gt=100&soil_percent_lt=50
+    # Example query: /api/logs/all?lux_gt=100&soil_percent_lt=50
     for key, value in request.args.items():
         parts = key.split('_')
         if len(parts) != 2: continue
@@ -158,20 +193,27 @@ def api_logs_all():
         where_conditions.append(f"{db_column} {operator} ?")
         query_params.append(value)
 
-    # Ova logika će biti premještena u database.py, ali je ovdje sigurno implementirana
     rows = database.get_logs_where(" AND ".join(where_conditions), query_params)
     return jsonify(rows)
 
 @app.route("/api/logs/delete", methods=["POST"])
 def api_logs_delete():
+    """API endpoint to delete log entries by their IDs."""
     data = request.json
     ids = data.get("ids")
-    # Logika će biti prebačena u database.py
     ok, msg = database.delete_logs_by_id(ids)
     return jsonify({"ok": ok, "msg": msg})
 
 @app.route("/api/sensor/read", methods=["GET"])
 def api_sensor_read():
+    """API endpoint to read a single value from a specified sensor.
+
+    Query Parameters:
+        type (str): The type of sensor to read ('ads', 'dht', 'ds18b20', 'bh1750').
+
+    Returns:
+        A JSON response with the sensor reading, or an error.
+    """
     sensor_type = request.args.get("type", "all")
     try:
         if sensor_type == "ads":
@@ -188,51 +230,70 @@ def api_sensor_read():
             lux = sensors.read_bh1750_lux()
             return jsonify({"type": "bh1750", "lux": lux})
         else:
-            return jsonify({"error": "Nepoznat tip senzora"}), 400
+            return jsonify({"error": "Unknown sensor type"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/relay/toggle", methods=["POST"])
 def api_relay_toggle():
+    """API endpoint to toggle the state of a relay."""
     try:
         data = request.get_json()
-        relay_num = data.get("relay", type=int)
-        state = data.get("state", type=bool)
+        print(f"Received relay toggle request: {data}")  # Debugging line
+        relay_num = data.get("relay")
+        state = data.get("state")
+
+        # Basic validation
+        if relay_num not in [1, 2] or not isinstance(state, bool):
+            return jsonify({"ok": False, "error": "Invalid input"}), 400
 
         pin_map = {1: RELAY1, 2: RELAY2}
-        if relay_num not in pin_map:
-            return jsonify({"ok": False, "error": "Nepostojeći relej"}), 400
-
         pin = pin_map[relay_num]
         relay_name = f"RELAY{relay_num}"
 
         relays.set_relay_state(pin, state)
         database.insert_relay_event(relay_name, "ON" if state else "OFF", source="web")
 
-        print(f"[WEB] Relej {relay_name} prebačen u stanje {'ON' if state else 'OFF'}.")
+        print(f"[WEB] Relay {relay_name} switched to {'ON' if state else 'OFF'}.")
         return jsonify({"ok": True, "relay": relay_name, "state": "ON" if state else "OFF"})
     except Exception as e:
+        print(f"[ERROR] api_relay_toggle failed: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/relay_log", methods=["GET"])
+@app.route("/relay_log_data", methods=["GET"])
 def api_relay_log():
+    """API endpoint to get the latest relay event logs.
+
+    Query Parameters:
+        limit (int): The number of logs to return. Defaults to 10.
+    """
     limit = request.args.get("limit", 10, type=int)
-    # Logika će biti prebačena u database.py
     log_data = database.get_relay_log(limit=limit)
-    return jsonify(log_data)
+
+    # Transform data for the frontend table
+    transformed_data = []
+    for row in log_data:
+        transformed_data.append({
+            "t": row['timestamp'],
+            "relay": row['relay_name'],
+            "v": 1 if row['action'] == 'ON' else 0,
+            "action": row['action'],
+            "source": row['source']
+        })
+    return jsonify(transformed_data)
 
 @app.route("/logs/file")
 def get_logfile():
-    """Prikazuje zadnjih 20000 znakova iz log datoteke loggera."""
+    """Displays the last 20000 characters from the logger's log file."""
     if os.path.isfile(logger_logfile):
         try:
             with open(logger_logfile, "r") as f:
                 return f"<pre>{f.read()[-20000:]}</pre>"
         except IOError as e:
-            return f"Greška pri čitanju log datoteke: {e}"
-    return "Log datoteka nije pronađena."
+            return f"Error reading log file: {e}"
+    return "Log file not found."
 
 
 if __name__ == "__main__":
-    # Pokreni Flask server na svim mrežnim sučeljima
+    # Run the Flask server on all network interfaces
     app.run(host="0.0.0.0", port=5000, debug=True)

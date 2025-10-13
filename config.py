@@ -1,26 +1,42 @@
 import os
 import Adafruit_DHT
 
-# --- Putevi (Paths) ---
+# --- File and Directory Paths ---
+# Base directory of the application.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Path to the soil moisture sensor calibration file.
 CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
+# Path to the SQLite database file.
 DB_FILE = os.path.join(BASE_DIR, "sensors.db")
+# Directory for storing log files.
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
+# File to store the status of the logger process.
 STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
+# File to store the timestamp of the last watering event.
 LAST_WATERING_FILE = os.path.join(BASE_DIR, "last_watering.txt")
 
-# --- GPIO Pinovi (BCM numeriranje) ---
-RELAY1 = 12  # IN1 pin za relej pumpe
-RELAY2 = 16  # IN2 pin za relej svjetla (ili drugi)
-DHT_PIN = 27 # Data pin za DHT22 senzor
+# --- GPIO Pin Configuration (BCM numbering) ---
+# GPIO pin for the water pump relay.
+RELAY1 = 12
+# GPIO pin for the light relay or other secondary relay.
+RELAY2 = 16
+# GPIO data pin for the DHT22 temperature and humidity sensor.
+DHT_PIN = 27
 
-# --- Senzori - Tipovi i adrese ---
+# --- Sensor Types and Addresses ---
+# Type of DHT sensor being used.
 DHT_SENSOR = Adafruit_DHT.DHT22
-W1_BASE_DIR = '/sys/bus/w1/devices/' # Bazni direktorij za 1-Wire uređaje
-BH1750_ADDR = 0x23 # I2C adresa za BH1750 (ili 0x5C)
+# Base directory for 1-Wire devices (e.g., DS18B20 temperature sensor).
+W1_BASE_DIR = '/sys/bus/w1/devices/'
+# I2C address for the BH1750 light sensor.
+BH1750_ADDR = 0x23
 
-# --- Postavke Aplikacije ---
-LOG_INTERVAL_SECONDS = 2400 # Interval logiranja (40 minuta)
-WATERING_THRESHOLD_PERCENT = 40.0 # Prag vlažnosti za automatsko zalijevanje
-WATERING_DURATION_SECONDS = 10 # Trajanje zalijevanja u sekundama
-WATERING_COOLDOWN_SECONDS = 3600 # Vrijeme mirovanja nakon zalijevanja (1 sat)
+# --- Application Settings ---
+# Interval in seconds for logging sensor data.
+LOG_INTERVAL_SECONDS = 2400
+# Soil moisture threshold (in percent) for automatic watering.
+WATERING_THRESHOLD_PERCENT = 40.0
+# Duration in seconds for each watering cycle.
+WATERING_DURATION_SECONDS = 10
+# Cooldown period in seconds after watering before another cycle can be triggered.
+WATERING_COOLDOWN_SECONDS = 3600
