@@ -190,7 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	// ------- Grafikon paljenja/gasenja releja (signal) -------
 	let relayChart = null;
 	async function loadRelayChart() {
-		const res = await fetch('/relay_log_data');
+		const res = await fetch('/relay_log_data?limit=100');
 		const data = await res.json();
 
 		if (!data || (!data.RELAY1?.length && !data.RELAY2?.length)) return;
@@ -337,7 +337,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	// ------- tablica relej logova (sada očekuje array sorted by time) -------
 	async function loadRelayLogTable() {
-		const res = await fetch('/relay_log_data');
+		const res = await fetch('/relay_log_data?limit=100');
 		const data = await res.json();
 
 		const tbody = document.querySelector('#relayLogTable tbody');
