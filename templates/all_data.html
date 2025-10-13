@@ -56,17 +56,34 @@
   </div>
   <div id="deleteStatus" class="text-muted small"></div>
 
-  <h4 class="mt-4">Tablica svih podataka</h4>
-  <div style="max-height:400px; overflow:auto;">
-    <table class="table table-striped table-sm">
-      <thead class="table-light">
-        <tr>
-          <th>ID</th><th>Vrijeme</th><th>Air T</th><th>Air H</th>
-          <th>Soil T</th><th>Soil %</th><th>Lux</th><th>Stable</th>
-        </tr>
-      </thead>
-      <tbody id="logsBody"></tbody>
-    </table>
+  <div class="row">
+    <div class="col-lg-8">
+      <h4 class="mt-4">Tablica svih podataka o senzorima</h4>
+      <div style="max-height:400px; overflow:auto;">
+        <table class="table table-striped table-sm">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th><th>Vrijeme</th><th>Air T</th><th>Air H</th>
+              <th>Soil T</th><th>Soil %</th><th>Lux</th><th>Stable</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <h4 class="mt-4">Tablica svih podataka o relejima</h4>
+      <div style="max-height:400px; overflow:auto;">
+        <table class="table table-striped table-sm">
+          <thead class="table-light">
+            <tr>
+              <th>Vrijeme</th><th>Relej</th><th>Akcija</th><th>Izvor</th>
+            </tr>
+          </thead>
+          <tbody id="relayLogsBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -189,7 +206,46 @@ document.querySelectorAll('.example-btn').forEach(btn => {
   });
 });
 
-window.onload = loadData;
+async function loadRelayData() {
+    const res = await fetch('/relay_log_data?limit=0');
+    const data = await res.json();
+    const tbody = document.getElementById('relayLogsBody');
+    tbody.innerHTML = '';
+
+    const allLogs = [];
+    for (const relayName in data) {
+        data[relayName].forEach(log => {
+            allLogs.push({
+                relay_name: relayName,
+                timestamp: log.t,
+                action: log.action,
+                source: log.source,
+            });
+        });
+    }
+
+    allLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    allLogs.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${r.timestamp}</td>
+            <td>${r.relay_name}</td>
+            <td>
+                <span class="badge ${r.action === 'ON' ? 'bg-success' : 'bg-secondary'}">
+                    ${r.action}
+                </span>
+            </td>
+            <td>${r.source || 'button'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+window.onload = () => {
+  loadData();
+  loadRelayData();
+};
 </script>
 </body>
 </html>

@@ -128,7 +128,8 @@ def get_logs(limit=100, order="ASC"):
     """Fetches sensor logs from the database, sorted by ID.
 
     Args:
-        limit (int): The maximum number of logs to retrieve.
+        limit (int): The maximum number of logs to retrieve. If 0 or None,
+                     all logs are returned.
         order (str): The sort order, either "ASC" for ascending or "DESC" for descending.
 
     Returns:
@@ -137,7 +138,15 @@ def get_logs(limit=100, order="ASC"):
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
     order_clause = "DESC" if order.upper() == "DESC" else "ASC"
-    c.execute(f"SELECT * FROM logs ORDER BY id {order_clause} LIMIT ?", (limit,))
+
+    query = f"SELECT * FROM logs ORDER BY id {order_clause}"
+    params = []
+
+    if limit:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     return rows
@@ -225,14 +234,23 @@ def get_relay_log(limit=10):
     """Fetches the last N relay events.
 
     Args:
-        limit (int): The maximum number of relay events to retrieve.
+        limit (int): The maximum number of relay events to retrieve. If 0 or
+                     None, all events are returned.
 
     Returns:
         A list of dictionaries, where each dictionary represents a relay event.
     """
     conn = _get_db_connection(dict_cursor=True)
     c = conn.cursor()
-    c.execute("SELECT * FROM relay_log ORDER BY id DESC LIMIT ?", (limit,))
+
+    query = "SELECT * FROM relay_log ORDER BY id DESC"
+    params = []
+
+    if limit:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     return rows

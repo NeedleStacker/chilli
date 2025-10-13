@@ -147,6 +147,7 @@ def api_logs():
 
     Query Parameters:
         limit (int): The number of logs to return. Defaults to 100.
+                     Set to 0 to get all logs.
 
     Returns:
         A JSON response with a list of log entries.
@@ -266,6 +267,7 @@ def api_relay_log():
 
     Query Parameters:
         limit (int): The number of logs to return. Defaults to 10.
+                     Set to 0 to get all logs.
     """
     limit = request.args.get("limit", 10, type=int)
     log_data = database.get_relay_log(limit=limit)
