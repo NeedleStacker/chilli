@@ -10,92 +10,92 @@ import relays
 import sensors
 import database
 from config import BASE_DIR, RELAY1, RELAY2, STATUS_FILE
+import process_manager
 
 # Flask
 from flask import Flask, render_template, jsonify, request
 
-# --- Initialization ---
-# Initialize hardware and database before any logic runs
-hardware.initialize()
-database.init_db()
-
 # Create Flask application
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
-# Ensure GPIO resources are cleaned up on application exit
-atexit.register(hardware.cleanup)
 
-# --- Logger Process Management ---
-logger_lock = threading.Lock()
-logger_process = None
-logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
+# --- Startup initialization (deferred) ---
+def _app_startup():
+    """Initialize hardware and database at runtime.
+
+    This avoids side-effects at import time (useful for analysis, tests,
+    and CI on non-RPi hosts). It also registers cleanup for atexit.
+    """
+    try:
+        hardware.initialize()
+    except Exception as e:
+        print(f"[WARN] hardware.initialize() failed during startup: {e}")
+
+    try:
+        database.init_db()
+    except Exception as e:
+        print(f"[WARN] database.init_db() failed during startup: {e}")
+
+    # Register cleanup after successful (or attempted) initialization
+    atexit.register(hardware.cleanup)
+
+
+# Register the startup handler if Flask supports before_first_request at runtime.
+try:
+    if hasattr(app, 'before_first_request'):
+        app.before_first_request(_app_startup)
+except Exception:
+    # If the Flask object doesn't support before_first_request (older/stripped
+    # builds), we'll call _app_startup() manually in __main__ before starting.
+    pass
+
+
+# --- Backwards-compatible immediate initialization ---
+# By default (to match older behavior) initialize hardware and DB at import
+# time so routes can assume GPIO/I2C are ready. Set DEFER_HARDWARE_INIT=1 to
+# opt into deferred startup (for CI or special test scenarios).
+if os.environ.get('DEFER_HARDWARE_INIT') != '1':
+    try:
+        hardware.initialize()
+    except Exception as e:
+        print(f"[WARN] hardware.initialize() failed at import: {e}")
+
+    try:
+        database.init_db()
+    except Exception as e:
+        print(f"[WARN] database.init_db() failed at import: {e}")
+
+    # Ensure cleanup is registered (if not already)
+    try:
+        atexit.register(hardware.cleanup)
+    except Exception:
+        pass
+
+# --- Logger Process Management (delegated) ---
+_logger_mgr = process_manager.init_logger_manager(BASE_DIR)
 
 def is_logger_running():
-    """Checks if the logger.py subprocess is running.
-
-    Returns:
-        bool: True if the logger process is active, False otherwise.
-    """
-    global logger_process
-    if logger_process and logger_process.poll() is None:
-        return True
-    logger_process = None
-    return False
+    mgr = process_manager.get_logger_manager()
+    return mgr.is_running() if mgr else False
 
 def start_logger():
-    """Starts logger.py as a subprocess.
-
-    Returns:
-        A tuple (bool, str) indicating success and a message.
-    """
-    global logger_process
-    with logger_lock:
-        if is_logger_running():
-            return False, "Logger is already running."
-
-        logger_script = os.path.join(BASE_DIR, "logger.py")
-        if not os.path.isfile(logger_script):
-            return False, "logger.py script not found."
-
-        # Use the 'run' command defined in logger.py
-        cmd = ["python3", logger_script, "run"]
-        with open(logger_logfile, "a") as logfile:
-            proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=subprocess.STDOUT)
-
-        logger_process = proc
-        time.sleep(0.5) # Give the process time to start or fail
-
-        if is_logger_running():
-            return True, f"Logger started with PID={proc.pid}."
-        else:
-            return False, "Failed to start logger. Check the log file."
+    mgr = process_manager.get_logger_manager()
+    if not mgr:
+        return False, "Logger manager not initialized."
+    return mgr.start()
 
 def stop_logger():
-    """Stops the logger.py subprocess.
-
-    Returns:
-        A tuple (bool, str) indicating success and a message.
-    """
-    global logger_process
-    with logger_lock:
-        if not is_logger_running():
-            return False, "Logger was not running."
-
+    mgr = process_manager.get_logger_manager()
+    if not mgr:
+        return False, "Logger manager not initialized."
+    ok, msg = mgr.stop()
+    # Clean up the status file
+    if os.path.exists(STATUS_FILE):
         try:
-            pid = logger_process.pid
-            logger_process.terminate()
-            logger_process.wait(timeout=5) # Wait up to 5 seconds
-            print(f"Logger process (PID: {pid}) stopped (terminate).")
-        except subprocess.TimeoutExpired:
-            logger_process.kill()
-            print(f"Logger process (PID: {pid}) did not respond, sent kill signal.")
-
-        logger_process = None
-        # Clean up the status file
-        if os.path.exists(STATUS_FILE):
             os.remove(STATUS_FILE)
-
-        return True, "Logger stopped."
+        except Exception:
+            pass
+    return ok, msg
 
 # ---- HTML Page Routes ----
 @app.route("/")
@@ -137,7 +137,7 @@ def api_run_stop():
 def api_run_status():
     """API endpoint to get the status of the logger process."""
     running = is_logger_running()
-    pid = logger_process.pid if running else None
+    pid = process_manager.get_logger_pid() if running else None
     status_text = f"RUNNING @ {time.strftime('%d.%m.%Y %H:%M:%S')} (PID: {pid})" if running else "STOPPED"
     return jsonify({"status": status_text})
 
@@ -270,16 +270,17 @@ def api_relay_log():
     limit = request.args.get("limit", 10, type=int)
     log_data = database.get_relay_log(limit=limit)
 
-    # Transform data for the frontend table
-    transformed_data = []
+    # The frontend expects a different format, so we transform the data here
+    transformed_data = {"RELAY1": [], "RELAY2": []}
     for row in log_data:
-        transformed_data.append({
-            "t": row['timestamp'],
-            "relay": row['relay_name'],
-            "v": 1 if row['action'] == 'ON' else 0,
-            "action": row['action'],
-            "source": row['source']
-        })
+        relay_name = row['relay_name']
+        if relay_name in transformed_data:
+            transformed_data[relay_name].append({
+                "t": row['timestamp'].split(" ")[1],
+                "v": 1 if row['action'] == 'ON' else 0,
+                "action": row['action'],
+                "source": row['source']
+            })
     return jsonify(transformed_data)
 
 @app.route("/logs/file")
