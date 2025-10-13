@@ -5,32 +5,40 @@ import busio
 import Adafruit_DHT
 import RPi.GPIO as GPIO
 
-# --- ADS1115 Setup ---
-i2c = busio.I2C(board.SCL, board.SDA)  # I²C se otvara samo jednom!
+# --- I2C Initialization ---
+# This I2C bus is shared across sensor modules to avoid re-initialization.
+i2c = busio.I2C(board.SCL, board.SDA)
 
-# ------------------ GPIO Setup ------------------
+# --- GPIO Setup ---
 GPIO.setmode(GPIO.BCM)
 
-# --- Relej Setup ---
-RELAY1 = 12  # IN1
-RELAY2 = 16  # IN2
-GPIO.setup(RELAY1, GPIO.OUT, initial=GPIO.HIGH)  # OFF by default (LOW-trigger)
-GPIO.setup(RELAY2, GPIO.OUT, initial=GPIO.HIGH)
+# --- Relay Pin Configuration ---
+RELAY1_PIN = 12  # Connected to IN1
+RELAY2_PIN = 16  # Connected to IN2
+GPIO.setup(RELAY1_PIN, GPIO.OUT, initial=GPIO.HIGH)  # Relays are LOW-trigger (HIGH = OFF)
+GPIO.setup(RELAY2_PIN, GPIO.OUT, initial=GPIO.HIGH)
 
-# --- DHT22 Setup ---
-DHT_SENSOR = Adafruit_DHT.DHT22
-DHT_PIN = 27
+# --- DHT22 Sensor Configuration ---
+DHT_SENSOR_TYPE = Adafruit_DHT.DHT22
+DHT_SENSOR_PIN = 27
 
-# --- DS18B20 Setup ---
+# --- DS18B20 Sensor Configuration ---
+# Enable 1-Wire interface
 os.system('modprobe w1-gpio')
 os.system('modprobe w1-therm')
-base_dir = '/sys/bus/w1/devices/'
-device_folder = glob.glob(base_dir + '28-*')[0]
-device_file = device_folder + '/w1_slave'
 
-# --- Paths ---
+# Locate the sensor's device file
+try:
+    base_dir = '/sys/bus/w1/devices/'
+    device_folder = glob.glob(base_dir + '28-*')[0]
+    DS18B20_DEVICE_FILE = os.path.join(device_folder, 'w1_slave')
+except IndexError:
+    print("Warning: DS18B20 sensor not found. Please check the connection.")
+    DS18B20_DEVICE_FILE = None
+
+# --- File and Directory Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
-DB_FILE = os.path.join(BASE_DIR, "sensors.db")
+CALIBRATION_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
+DATABASE_FILE = os.path.join(BASE_DIR, "sensors.db")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")

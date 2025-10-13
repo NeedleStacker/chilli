@@ -2,211 +2,281 @@ import os
 import json
 import time
 import datetime
+import smbus2
+from typing import Tuple, Optional, Dict, Any
+
 import board
 import busio
-import smbus2
-
 from adafruit_ads1x15.analog_in import AnalogIn
 import adafruit_ads1x15.ads1115 as ADS
 
-from config import CALIB_FILE, device_file, DHT_SENSOR, DHT_PIN, i2c as shared_i2c
+from config import (
+    CALIBRATION_FILE,
+    DS18B20_DEVICE_FILE,
+    DHT_SENSOR_TYPE,
+    DHT_SENSOR_PIN,
+    i2c as shared_i2c,
+)
 
+# --- Constants ---
+BH1750_I2C_ADDRESS = 0x23  # Use 0x5C if ADDR pin is high
+BH1750_CONTINUOUS_HIGH_RES_MODE = 0x10
 
-def read_soil_raw_shared():
+# --- ADS1115 Soil Moisture Sensor ---
+
+def _read_ads1115_stable(ads: ADS.ADS1115) -> Tuple[int, float]:
     """
-    Čita koristeći shared I2C iz configa (brže, ali kod tebe je drugo i treće
-    očitanje znalo 'podivljati').
-    """
-    ads = ADS.ADS1115(shared_i2c)
-    ads.gain = 1
-    return _read_ads_once(ads)
+    Performs a stable read from the ADS1115 ADC.
 
+    This includes a "flush" read to ensure the subsequent value is current.
 
-def read_soil_raw_fresh():
+    Args:
+        ads (ADS.ADS1115): The ADS1115 object.
+
+    Returns:
+        Tuple[int, float]: The raw ADC value and the corresponding voltage.
     """
-    Svaki put stvori NOVI I2C i NOVI ADS1115 objekt → ponaša se kao 'prvo mjerenje'.
-    Ovo je rješenje za tvoj slučaj.
+    channel = AnalogIn(ads, ADS.P0)
+    _ = channel.value  # First read to flush
+    time.sleep(0.05)
+    raw_value = channel.value
+    voltage = channel.voltage
+    return raw_value, voltage
+
+def read_soil_moisture_raw(use_shared_i2c: bool = False) -> Tuple[Optional[int], Optional[float]]:
+    """
+    Reads the raw soil moisture value and voltage from the ADS1115 sensor.
+
+    To prevent unstable readings observed with a shared I2C bus, this function
+    creates a new I2C object by default for each call.
+
+    Args:
+        use_shared_i2c (bool): If True, uses the shared I2C bus from config.
+
+    Returns:
+        Tuple[Optional[int], Optional[float]]: Raw ADC value and voltage, or (None, None) on failure.
     """
     try:
-        import board
-        import busio
-        i2c = busio.I2C(board.SCL, board.SDA)
+        i2c = shared_i2c if use_shared_i2c else busio.I2C(board.SCL, board.SDA)
         ads = ADS.ADS1115(i2c)
         ads.gain = 1
-        raw, voltage = _read_ads_once(ads)
-        # Po Blinki najčešće nema deinit; samo pusti GC da počisti
-        del ads
-        del i2c
+        raw, voltage = _read_ads1115_stable(ads)
+        if not use_shared_i2c:
+            del ads
+            del i2c
         return raw, voltage
     except Exception as e:
-        print(f"[WARN] fresh ADS read error: {e}")
+        print(f"[Warning] Failed to read from ADS1115: {e}")
         return None, None
 
-# ------------------ DS18B20 ------------------
-def read_ds18b20_temp():
-    """Vrati temperaturu tla ili None ako čitanje ne uspije."""
+def convert_voltage_to_soil_percentage(voltage: Optional[float], debug: bool = False) -> float:
+    """
+    Converts soil moisture sensor voltage to a percentage based on calibration values.
+
+    Args:
+        voltage (Optional[float]): The voltage to convert.
+        debug (bool): If True, prints debugging information.
+
+    Returns:
+        float: The calculated soil moisture percentage (0-100).
+    """
+    calibration = load_voltage_calibration()
+    dry_voltage = float(calibration["dry_v"])
+    wet_voltage = float(calibration["wet_v"])
+
+    # Ensure dry_voltage is always greater than wet_voltage
+    if dry_voltage < wet_voltage:
+        dry_voltage, wet_voltage = wet_voltage, dry_voltage
+
+    voltage_range = dry_voltage - wet_voltage
+    if voltage_range <= 0:
+        if debug:
+            print(f"[Debug] Invalid calibration range: dry_v={dry_voltage}, wet_v={wet_voltage}")
+        return 0.0
+
+    if voltage is None:
+        return 0.0
+
+    # Calculate percentage (inverted scale)
+    if voltage >= dry_voltage:
+        percent = 0.0
+    elif voltage <= wet_voltage:
+        percent = 100.0
+    else:
+        percent = (dry_voltage - voltage) * 100.0 / voltage_range
+
+    # Clamp the value between 0 and 100
+    percent = max(0.0, min(100.0, percent))
+
+    if debug:
+        print(
+            f"[Debug] voltage={voltage:.4f}, dry_v={dry_voltage:.4f}, "
+            f"wet_v={wet_voltage:.4f}, range={voltage_range:.4f}, percent={percent:.3f}"
+        )
+    return round(percent, 3)
+
+def read_soil_moisture_percentage(
+    voltage: Optional[float] = None, use_shared_i2c: bool = False, debug: bool = False
+) -> float:
+    """
+    A wrapper to get the soil moisture percentage.
+
+    If voltage is not provided, it will be read from the sensor first.
+
+    Args:
+        voltage (Optional[float]): The sensor voltage.
+        use_shared_i2c (bool): Passed to the raw reading function.
+        debug (bool): Passed to the conversion function.
+
+    Returns:
+        float: The soil moisture percentage.
+    """
+    if voltage is None:
+        _, voltage = read_soil_moisture_raw(use_shared_i2c=use_shared_i2c)
+    return convert_voltage_to_soil_percentage(voltage, debug=debug)
+
+
+# --- DS18B20 Soil Temperature Sensor ---
+
+def read_ds18b20_temperature() -> Optional[float]:
+    """
+    Reads the soil temperature from the DS18B20 sensor.
+
+    Returns:
+        Optional[float]: The temperature in Celsius, or None if the read fails.
+    """
+    if not DS18B20_DEVICE_FILE or not os.path.exists(DS18B20_DEVICE_FILE):
+        return None
     try:
-        with open(device_file, 'r') as f:
+        with open(DS18B20_DEVICE_FILE, 'r') as f:
             lines = f.readlines()
         if lines[0].strip()[-3:] != 'YES':
             return None
         equals_pos = lines[1].find('t=')
         if equals_pos != -1:
-            temp_string = lines[1][equals_pos + 2:]
+            temp_string = lines[1][equals_pos + 2 :]
             return float(temp_string) / 1000.0
-    except Exception:
+    except (IOError, IndexError, ValueError) as e:
+        print(f"[Warning] Failed to read DS18B20 sensor: {e}")
         return None
+    return None
 
 
-# ------------------ Kalibracija (volt-based) ------------------
-def load_calibration():
+# --- BH1750 Light Sensor ---
+
+def read_bh1750_light_intensity() -> Optional[float]:
     """
-    Očekuje kalibraciju u voltima:
-        {"dry_v": 1.60, "wet_v": 0.20}
-    Ako nema, pokušat će pročitati staro (RAW) i samo vratiti default V granice.
-    """
-    defDryV = 1.60
-    defWetV = 0.20
-    if not os.path.exists(CALIB_FILE):
-        print("[WARN] Calibration file not found -> using defaults")
-        return {"dry_v": defDryV, "wet_v": defWetV}
+    Reads the ambient light intensity in Lux from the BH1750 sensor.
 
-    try:
-        with open(CALIB_FILE, "r") as f:
-            obj = json.load(f)
-        if "dry_v" in obj and "wet_v" in obj:
-            return {"dry_v": float(obj["dry_v"]), "wet_v": float(obj["wet_v"])}
-        # fallback na stari RAW format → samo default
-        if "dry" in obj and "wet" in obj:
-            print("[WARN] Found old RAW calibration; using default V limits (1.60/0.20V)")
-        return {"dry_v": defDryV, "wet_v": defWetV}
-    except Exception as e:
-        print(f"[ERROR] Failed to read calibration file: {e} -> using defaults")
-        return {"dry_v": defDryV, "wet_v": defWetV}
-
-
-# ------------------ ADS1115 čitanje ------------------
-def _read_ads_once(ads):
-    """Jedno stabilno očitanje s 'flush' korakom."""
-    chan = AnalogIn(ads, ADS.P0)
-    _ = chan.value
-    time.sleep(0.05)
-    raw = chan.value
-    voltage = chan.voltage
-    return raw, voltage
-
-
-def read_soil_raw():
-    """
-    Svaki put inicijalizira novi I2C i ADS1115 → ponaša se kao 'prvo mjerenje'.
-    Ovo rješava problem gdje su druga i treća očitanja znala 'podivljati'.
+    Returns:
+        Optional[float]: The light intensity in Lux, or None on failure.
     """
     try:
-        i2c = busio.I2C(board.SCL, board.SDA)
-        ads = ADS.ADS1115(i2c)
-        ads.gain = 1
-        raw, voltage = _read_ads_once(ads)
-        return raw, voltage
-    except Exception as e:
-        print(f"[WARN] fresh ADS read error: {e}")
-        return None, None
-
-
-# ------------------ Postotak vlage (iz VOLTAGE) ------------------
-def read_soil_percent_from_voltage(voltage, debug=False):
-    calib = load_calibration()
-    dry_v = float(calib["dry_v"])
-    wet_v = float(calib["wet_v"])
-
-    if dry_v < wet_v:
-        dry_v, wet_v = wet_v, dry_v
-
-    span = dry_v - wet_v
-    if span <= 0:
-        if debug:
-            print(f"[DEBUG] Invalid calibration span: dry_v={dry_v}, wet_v={wet_v}")
-        return 0.0
-
-    if voltage is None:
-        return 0.0
-
-    if voltage >= dry_v:
-        percent = 0.0
-    elif voltage <= wet_v:
-        percent = 100.0
-    else:
-        percent = (dry_v - voltage) * 100.0 / span
-
-    percent = max(0.0, min(100.0, percent))
-    if debug:
-        print(f"[DEBUG] voltage={voltage:.4f}, dry_v={dry_v:.4f}, wet_v={wet_v:.4f}, span={span:.4f}, percent={percent:.3f}")
-    return round(percent, 3)
-
-
-def read_soil_percent(raw=None, voltage=None, debug=False):
-    """
-    Kompatibilni wrapper: koristi voltage ako ga dobiješ,
-    ako ne → očitaj ga.
-    """
-    if voltage is None:
-        _, voltage = read_soil_raw()
-    return read_soil_percent_from_voltage(voltage, debug=debug)
-
-# -----------------------------
-# BH1750 - svjetlosni senzor
-# -----------------------------
-BH1750_ADDR = 0x23  # ili 0x5C, ovisi o ADO pinu
-BH1750_MODE = 0x10  # kontinurani high-res (1 lx rezolucija)
-
-def read_bh1750_lux():
-    """Vrati izmjerenu svjetlost u luksima s BH1750 senzora."""
-    try:
-        bus = smbus2.SMBus(1)  # /dev/i2c-1
-        bus.write_byte(BH1750_ADDR, BH1750_MODE)
+        bus = smbus2.SMBus(1)  # I2C bus 1
+        bus.write_byte(BH1750_I2C_ADDRESS, BH1750_CONTINUOUS_HIGH_RES_MODE)
         time.sleep(0.2)
-        data = bus.read_i2c_block_data(BH1750_ADDR, BH1750_MODE, 2)
+        data = bus.read_i2c_block_data(BH1750_I2C_ADDRESS, 0, 2)
         lux = (data[0] << 8 | data[1]) / 1.2
+        bus.close()
         return round(lux, 2)
     except Exception as e:
-        print(f"[WARN] BH1750 očitanje nije uspjelo: {e}")
+        print(f"[Warning] Failed to read from BH1750: {e}")
         return None
 
-# ------------------ Test / kalibracija ------------------
-def test_dht():
-    """Vrati tuple (temperature, humidity) ili (None, None)."""
+
+# --- DHT22 Air Temperature & Humidity Sensor ---
+
+def read_dht22_sensor() -> Tuple[Optional[float], Optional[float]]:
+    """
+    Reads temperature and humidity from the DHT22 sensor.
+
+    Returns:
+        Tuple[Optional[float], Optional[float]]: Temperature (C) and humidity (%), or (None, None).
+    """
     try:
         import Adafruit_DHT
-        humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
+        humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR_TYPE, DHT_SENSOR_PIN)
         return temperature, humidity
-    except Exception:
+    except Exception as e:
+        print(f"[Warning] Failed to read DHT22 sensor: {e}")
         return None, None
 
 
-def test_ds18b20():
-    """Vrati temperaturu ili None."""
-    return read_ds18b20_temp()
+# --- Calibration ---
 
+def load_voltage_calibration() -> Dict[str, float]:
+    """
+    Loads voltage calibration data from the JSON file.
 
-def test_ads():
-    raw, voltage = read_soil_raw()
-    pct = read_soil_percent_from_voltage(voltage, debug=True)
-    print(f"ADS1115 channel 0: raw={raw}, voltage={0.0 if voltage is None else round(voltage,3)} V - {datetime.datetime.now()}")
-    print(f"Soil moisture: {pct:.3f} %")
+    Expects format: {"dry_v": 1.60, "wet_v": 0.20}
+    Falls back to default values if the file is missing or invalid.
 
+    Returns:
+        Dict[str, float]: A dictionary with 'dry_v' and 'wet_v' keys.
+    """
+    default_dry_v = 1.60
+    default_wet_v = 0.20
+    defaults = {"dry_v": default_dry_v, "wet_v": default_wet_v}
 
-def calibrate_ads(dry=False, wet=False):
-    raw, voltage = read_soil_raw()
+    if not os.path.exists(CALIBRATION_FILE):
+        print("[Warning] Calibration file not found. Using default values.")
+        return defaults
+
+    try:
+        with open(CALIBRATION_FILE, "r") as f:
+            data = json.load(f)
+        if "dry_v" in data and "wet_v" in data:
+            return {"dry_v": float(data["dry_v"]), "wet_v": float(data["wet_v"])}
+        if "dry" in data and "wet" in data:  # Legacy format support
+            print("[Warning] Found old RAW calibration format. Using default voltage limits.")
+        return defaults
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        print(f"[Error] Failed to read calibration file: {e}. Using default values.")
+        return defaults
+
+def calibrate_soil_moisture_sensor(dry: bool = False, wet: bool = False) -> None:
+    """
+    Saves new calibration values for the soil moisture sensor.
+
+    Args:
+        dry (bool): If True, sets the current reading as the dry reference.
+        wet (bool): If True, sets the current reading as the wet reference.
+    """
+    _, voltage = read_soil_moisture_raw()
     if voltage is None:
-        print("[ERROR] Nije moguće očitati ADS1115.")
+        print("[Error] Could not read from ADS1115 sensor for calibration.")
         return
 
-    calib = load_calibration()
+    calibration = load_voltage_calibration()
     if dry:
-        calib["dry_v"] = float(voltage)
-        print(f"Snima se DRY referenca (V): {voltage:.3f} V  [raw={raw}]")
+        calibration["dry_v"] = float(voltage)
+        print(f"New DRY reference saved: {voltage:.3f} V")
     if wet:
-        calib["wet_v"] = float(voltage)
-        print(f"Snima se WET referenca (V): {voltage:.3f} V  [raw={raw}]")
-    with open(CALIB_FILE, "w") as f:
-        json.dump(calib, f)
-    print("Kalibracija spremljena:", calib)
+        calibration["wet_v"] = float(voltage)
+        print(f"New WET reference saved: {voltage:.3f} V")
+
+    with open(CALIBRATION_FILE, "w") as f:
+        json.dump(calibration, f, indent=4)
+    print("Calibration saved:", calibration)
+
+
+# --- Sensor Test Functions ---
+
+def test_dht22_sensor() -> None:
+    """Tests the DHT22 sensor and prints the readings."""
+    temperature, humidity = read_dht22_sensor()
+    print(f"DHT22 Sensor: Temperature={temperature}°C, Humidity={humidity}%")
+
+def test_ds18b20_sensor() -> None:
+    """Tests the DS18B20 sensor and prints the reading."""
+    temperature = read_ds18b20_temperature()
+    print(f"DS18B20 Sensor: Soil Temperature={temperature}°C")
+
+def test_ads1115_sensor() -> None:
+    """Tests the ADS1115 sensor and prints the readings."""
+    raw, voltage = read_soil_moisture_raw()
+    percent = convert_voltage_to_soil_percentage(voltage, debug=True)
+    print(
+        f"ADS1115 Sensor: raw={raw}, voltage={voltage or 0.0:.3f} V"
+        f" -> Soil Moisture: {percent:.3f} %"
+    )

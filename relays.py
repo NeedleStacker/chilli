@@ -1,48 +1,73 @@
-#relays.py
 import RPi.GPIO as GPIO
 import time
-from config import RELAY1, RELAY2
+from typing import Dict
 
-def init_relays():
-    """Postavlja početno stanje releja na OFF."""
-    set_relay_state(RELAY1, False)
-    set_relay_state(RELAY2, False)
+from config import RELAY1_PIN, RELAY2_PIN
 
-def set_relay_state(relay, state):
-    """Postavlja stanje releja (True=ON, False=OFF). LOW-trigger logika."""
-    GPIO.output(relay, GPIO.LOW if state else GPIO.HIGH)
+def initialize_relays() -> None:
+    """Sets the initial state of both relays to OFF."""
+    set_relay_state(RELAY1_PIN, False)
+    set_relay_state(RELAY2_PIN, False)
 
-def get_relay_state(relay):
-    """Vrati True ako je relej uključen (LOW-trigger), False ako je isključen."""
-    return GPIO.input(relay) == GPIO.LOW
+def set_relay_state(pin: int, is_on: bool) -> None:
+    """
+    Sets the state of a specific relay pin.
+    Assumes LOW-trigger logic (LOW = ON, HIGH = OFF).
 
-def test_relays():
-    print("Testiranje releja...")
-    print("Relej 1 ON, Relej 2 OFF")
-    set_relay_state(RELAY1, True)
-    set_relay_state(RELAY2, False)
+    Args:
+        pin (int): The GPIO pin number of the relay.
+        is_on (bool): True to turn the relay ON, False to turn it OFF.
+    """
+    GPIO.output(pin, GPIO.LOW if is_on else GPIO.HIGH)
+
+def get_relay_state(pin: int) -> bool:
+    """
+    Returns the current state of a relay.
+
+    Args:
+        pin (int): The GPIO pin number of the relay.
+
+    Returns:
+        bool: True if the relay is ON, False if it is OFF.
+    """
+    return GPIO.input(pin) == GPIO.LOW
+
+def run_relay_test_sequence() -> None:
+    """Runs a test sequence to toggle both relays."""
+    print("Testing relays...")
+    print("Relay 1 ON, Relay 2 OFF")
+    set_relay_state(RELAY1_PIN, True)
+    set_relay_state(RELAY2_PIN, False)
     time.sleep(2)
 
-    print("Relej 1 OFF, Relej 2 ON")
-    set_relay_state(RELAY1, False)
-    set_relay_state(RELAY2, True)
+    print("Relay 1 OFF, Relay 2 ON")
+    set_relay_state(RELAY1_PIN, False)
+    set_relay_state(RELAY2_PIN, True)
     time.sleep(2)
 
-    print("Oba releja OFF")
-    set_relay_state(RELAY1, False)
-    set_relay_state(RELAY2, False)
+    print("Both relays OFF")
+    set_relay_state(RELAY1_PIN, False)
+    set_relay_state(RELAY2_PIN, False)
 
-    print(f"Stanje Relej1: {'ON' if get_relay_state(RELAY1) else 'OFF'}, Relej2: {'ON' if get_relay_state(RELAY2) else 'OFF'}")
-    print("Test završen.")
+    print(
+        f"Final state: Relay 1: {'ON' if get_relay_state(RELAY1_PIN) else 'OFF'}, "
+        f"Relay 2: {'ON' if get_relay_state(RELAY2_PIN) else 'OFF'}"
+    )
+    print("Test complete.")
 
-def set_all_relays(state):
-    """Postavlja oba releja na isto stanje."""
-    set_relay_state(RELAY1, state)
-    set_relay_state(RELAY2, state)
+def set_both_relays(is_on: bool) -> None:
+    """Sets both relays to the same state."""
+    set_relay_state(RELAY1_PIN, is_on)
+    set_relay_state(RELAY2_PIN, is_on)
 
-def get_all_relays():
-    """Vrati dict sa stanjem oba releja."""
+def get_all_relay_states() -> Dict[str, bool]:
+    """
+    Returns a dictionary with the current state of both relays.
+
+    Returns:
+        Dict[str, bool]: A dictionary mapping relay names to their ON/OFF state.
+    """
     return {
-        "relay1": get_relay_state(RELAY1),
-        "relay2": get_relay_state(RELAY2)
+        "relay1": get_relay_state(RELAY1_PIN),
+        "relay2": get_relay_state(RELAY2_PIN),
     }

@@ -1,15 +1,22 @@
-#database.py
 import sqlite3
 import datetime
-from config import DB_FILE
+from typing import List, Optional, Union
 
-def init_db():
-    """Kreira bazu i tablicu logs ako ne postoji. Dodaje lux stupac ako fali."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+from config import DATABASE_FILE
 
-    # Kreiraj tablicu ako ne postoji
-    c.execute("""
+def initialize_database() -> sqlite3.Connection:
+    """
+    Initializes the database and the 'logs' table if it doesn't exist.
+    Also adds 'lux' and 'stable' columns if they are missing.
+
+    Returns:
+        sqlite3.Connection: The database connection object.
+    """
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
+
+    # Create the 'logs' table if it doesn't exist
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
@@ -23,73 +30,88 @@ def init_db():
             stable INTEGER DEFAULT 1
         )
     """)
-    conn.commit()
+    connection.commit()
 
-    # Provjeri postoji li stupac 'lux'
-    c.execute("PRAGMA table_info(logs)")
-    cols = [row[1] for row in c.fetchall()]
-    if "lux" not in cols:
-        print("[DB] Dodajem stupac 'lux' u tablicu logs...")
-        c.execute("ALTER TABLE logs ADD COLUMN lux REAL")
-        conn.commit()
-    if "stable" not in cols:
-            print("[DB] Dodajem stupac 'stable' u tablicu logs...")
-            c.execute("ALTER TABLE logs ADD COLUMN stable INTEGER DEFAULT 1;")
-            conn.commit()
-    return conn
+    # Check for and add missing columns for backward compatibility
+    cursor.execute("PRAGMA table_info(logs)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "lux" not in columns:
+        print("[DB] Adding 'lux' column to the logs table...")
+        cursor.execute("ALTER TABLE logs ADD COLUMN lux REAL")
+        connection.commit()
+    if "stable" not in columns:
+        print("[DB] Adding 'stable' column to the logs table...")
+        cursor.execute("ALTER TABLE logs ADD COLUMN stable INTEGER DEFAULT 1;")
+        connection.commit()
 
-def delete_sql_data(ids=None, delete_all=False):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    return connection
+
+def delete_logs(ids: Optional[str] = None, delete_all: bool = False) -> None:
+    """
+    Deletes log records from the database.
+
+    Args:
+        ids (Optional[str]): A comma-separated string of IDs or ID ranges (e.g., "1,3,5-10").
+        delete_all (bool): If True, deletes all records. This requires a confirmation prompt.
+    """
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
 
     if delete_all:
-        confirm = input("⚠️  Sigurno želiš obrisati SVE podatke iz baze? (yes/no): ")
+        confirm = input("⚠️  Are you sure you want to delete ALL data from the database? (yes/no): ")
         if confirm.lower() == "yes":
-            c.execute("DELETE FROM logs")
-            c.execute("DELETE FROM sqlite_sequence WHERE name='logs'")  # reset autoincrement
-            conn.commit()
-            print("✅ Svi zapisi obrisani i indeks resetiran.")
+            cursor.execute("DELETE FROM logs")
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name='logs'")  # Reset autoincrement
+            connection.commit()
+            print("✅ All records have been deleted and the index has been reset.")
         else:
-            print("❌ Otkazano brisanje svih zapisa.")
+            print("❌ Canceled deleting all records.")
     elif ids:
         try:
-            id_list = []
+            id_list: List[int] = []
             for part in ids.split(","):
                 part = part.strip()
                 if "-" in part:
-                    start, end = part.split("-")
-                    start, end = int(start), int(end)
+                    start, end = map(int, part.split("-"))
                     id_list.extend(range(start, end + 1))
                 else:
                     id_list.append(int(part))
 
-            id_list = sorted(set(id_list))
+            id_list = sorted(list(set(id_list)))
             placeholders = ",".join("?" for _ in id_list)
-            c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
-            conn.commit()
-            print(f"✅ Obrisani zapisi s ID-evima: {id_list}")
+            cursor.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
+            connection.commit()
+            print(f"✅ Deleted records with IDs: {id_list}")
         except ValueError:
-            print("❌ Greška: ID-evi moraju biti brojevi, npr. 1,3,5 ili 3-10.")
+            print("❌ Error: IDs must be numbers, e.g., 1,3,5 or 3-10.")
     else:
-        print("⚠️ Nisi naveo ni --all ni --ids za brisanje.")
+        print("⚠️ No IDs specified for deletion. Use --ids or --all.")
 
-    conn.close()
+    connection.close()
 
-def get_sql_data():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM logs")
-    rows = c.fetchall()
+def get_all_logs() -> List[sqlite3.Row]:
+    """
+    Retrieves and prints all logs from the database.
+
+    Returns:
+        List[sqlite3.Row]: A list of all log records.
+    """
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM logs")
+    rows = cursor.fetchall()
     for row in rows:
         print(row)
-    conn.close()
+    connection.close()
+    return rows
 
-# ------------------ RELAY LOG ------------------
-def ensure_relay_log_table():
-    """Osigurava da relay_log tablica postoji."""
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("""
+# --- Relay Log Functions ---
+
+def ensure_relay_log_table_exists() -> None:
+    """Ensures the 'relay_log' table exists in the database."""
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS relay_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
@@ -98,18 +120,25 @@ def ensure_relay_log_table():
             source TEXT
         )
     """)
-    conn.commit()
-    conn.close()
+    connection.commit()
+    connection.close()
 
-def insert_relay_event(relay_name, action, source="button"):
-    """Upisuje ON/OFF događaj u relay_log tablicu."""
-    ensure_relay_log_table()
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute(
+def insert_relay_log_event(relay_name: str, action: str, source: str = "button") -> None:
+    """
+    Inserts a relay ON/OFF event into the 'relay_log' table.
+
+    Args:
+        relay_name (str): The name of the relay (e.g., "RELAY1").
+        action (str): The action performed ("ON" or "OFF").
+        source (str, optional): The source of the event. Defaults to "button".
+    """
+    ensure_relay_log_table_exists()
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute(
         "INSERT INTO relay_log (timestamp, relay_name, action, source) VALUES (?, ?, ?, ?)",
-        (ts, relay_name, action, source)
+        (timestamp, relay_name, action, source),
     )
-    conn.commit()
-    conn.close()
+    connection.commit()
+    connection.close()
