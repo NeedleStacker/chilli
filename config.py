@@ -1,13 +1,18 @@
 import os
 import glob
-import board
-import busio
 import Adafruit_DHT
 import RPi.GPIO as GPIO
 
 # --- I2C Initialization ---
 # This I2C bus is shared across sensor modules to avoid re-initialization.
-i2c = busio.I2C(board.SCL, board.SDA)
+try:
+    import board
+    import busio
+    i2c = busio.I2C(board.SCL, board.SDA)
+except (NotImplementedError, NameError):
+    print("Warning: Could not initialize I2C bus. This is expected on non-Raspberry Pi systems.")
+    i2c = None
+
 
 # --- GPIO Setup ---
 GPIO.setmode(GPIO.BCM)

@@ -1,5 +1,11 @@
-import os
 import sys
+import fake_rpi
+
+sys.modules['RPi'] = fake_rpi.RPi
+sys.modules['RPi.GPIO'] = fake_rpi.RPi.GPIO
+sys.modules['smbus'] = fake_rpi.smbus
+
+import os
 import sqlite3
 import subprocess
 import threading
@@ -153,7 +159,20 @@ def api_get_logs():
     """API endpoint to get a list of logs."""
     limit = int(request.args.get("limit", 100))
     logs = get_latest_logs(limit=limit)
-    return jsonify(logs)
+    # Map keys to what the frontend expects
+    mapped_logs = []
+    for log in logs:
+        mapped_logs.append({
+            "id": log["id"],
+            "timestamp": log["timestamp"],
+            "air_temp": log["dht22_air_temp"],
+            "air_humidity": log["dht22_humidity"],
+            "soil_temp": log["ds18b20_soil_temp"],
+            "soil_percent": log["soil_percent"],
+            "lux": log["lux"],
+            "stable": log["stable"]
+        })
+    return jsonify(mapped_logs)
 
 @app.route("/api/logs/all", methods=["GET"])
 def api_logs_all():
@@ -163,7 +182,7 @@ def api_logs_all():
         conn = sqlite3.connect(DATABASE_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        query = "SELECT * FROM logs"
+        query = "SELECT id, timestamp, dht22_air_temp as air_temp, dht22_humidity as air_humidity, ds18b20_soil_temp as soil_temp, soil_percent, lux, stable FROM logs"
         if where_clause:
             query += f" WHERE {where_clause}"
         query += " ORDER BY id ASC"
@@ -288,17 +307,19 @@ def relay_log_data():
     try:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT timestamp, relay_name, action FROM relay_log ORDER BY timestamp DESC LIMIT 10")
+        cursor.execute("SELECT timestamp, relay_name, action, source FROM relay_log ORDER BY timestamp DESC LIMIT 10")
         rows = cursor.fetchall()
         conn.close()
 
         log_data = []
-        for ts, relay, action in rows:
+        for ts, relay, action, source in rows:
             formatted_ts = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
             log_data.append({
-                "timestamp": formatted_ts,
+                "t": formatted_ts,
                 "relay": relay.upper(),
                 "action": action.upper(),
+                "v": 1 if action.upper() == "ON" else 0,
+                "source": source
             })
         return jsonify(log_data)
     except (sqlite3.Error, ValueError) as e:

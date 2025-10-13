@@ -155,7 +155,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "mode",
         choices=[
-            "run", "run_shared_i2c", "test_ads1115", "test_dht22",
+            "run", "run_first", "run_shared_i2c", "test_ads1115", "test_dht22",
             "test_ds18b20", "test_relays", "calibrate_soil_moisture",
             "get_all_logs", "delete_logs",
         ],
@@ -168,6 +168,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.mode == "run":
+        run_logging_cycle(use_shared_i2c=False)
+    elif args.mode == "run_first":
         run_logging_cycle(use_shared_i2c=False)
     elif args.mode == "run_shared_i2c":
         run_logging_cycle(use_shared_i2c=True)
