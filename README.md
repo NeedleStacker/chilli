@@ -1,134 +1,121 @@
-# Chili Plant Automation System
+# Chilli - Automated Plant Monitoring & Watering System
 
-This project provides a complete system for monitoring and automating the care of a chili plant using a Raspberry Pi. It periodically logs environmental data, controls a water pump based on soil moisture, and provides a web interface for visualization and manual control.
+**Last updated:** 2025-10-12
+
+## Overview
+
+Chilli is an open-source, Raspberry Pi-powered automated plant monitoring and watering system. It logs sensor data, controls relays for watering/light, and provides a web interface for real-time status, historical data, and hardware control.
 
 ## Features
 
-- **Sensor Monitoring**: Tracks air temperature, humidity, soil temperature, soil moisture, and ambient light levels.
-- **Automated Watering**: Automatically activates a water pump when soil moisture drops below a configurable threshold.
-- **Data Logging**: Stores all sensor readings in an SQLite database for historical analysis.
-- **Web Dashboard**: A Flask-based web interface to view real-time and historical data, and to see the status of system components.
-- **Manual Control**: Toggle relays for the water pump and a light directly from the web UI.
-- **API Access**: A simple REST API to programmatically access sensor data and control relays.
-- **Command-Line Interface**: A utility script (`manage.py`) for easy testing of hardware components and database management.
+- **Sensor logging:** Monitors soil moisture, air/soil temperature, air humidity, and ambient light (lux).
+- **Automated watering:** Triggers a water pump relay based on soil moisture thresholds and cooldowns.
+- **Web dashboard:** Flask-based interface to review sensor logs, current relay status, and control hardware.
+- **Extensible:** Modular Python code for sensors, relays, hardware interfaces, and database management.
+- **Database management:** SQLite-backed log and relay event tables with admin CLI tools.
+- **Calibration routines:** CLI support for sensor calibration and database maintenance.
 
-## Hardware Requirements
+## Technology Stack
 
-- Raspberry Pi (tested on a Pi 4, but any model with GPIO pins should work).
-- **Sensors**:
-    - DHT22: Air temperature and humidity.
-    - DS18B20 (waterproof): Soil temperature.
-    - Capacitive Soil Moisture Sensor.
-    - ADS1115 ADC: To read analog values from the soil moisture sensor.
-    - BH1750: Ambient light sensor.
-- **Actuators**:
-    - 2-Channel 5V Relay Module.
-    - Small 5V water pump.
-    - (Optional) LED light or other device for the second relay.
-- Breadboard and jumper wires for connections.
+- **Python** (core logic, hardware/sensor integration)
+- **Flask** (web server and API)
+- **HTML/CSS/JavaScript** (web dashboard, static assets)
+- **SQLite** (local database)
+- **Rich Text Format** (documentation/assets)
+- **RPi.GPIO, smbus2, Adafruit libraries** (hardware/sensor drivers)
 
-## Software Setup
+## Repository Structure
 
-### 1. Prepare the Raspberry Pi
+- `config.py` - Central configuration for file paths, GPIO pins, sensor types, intervals, and thresholds.
+- `database.py` - SQLite interface, schema migrations, log/relay event insert/delete/query routines.
+- `hardware.py` - Hardware initialization and cleanup; configures GPIO, I2C, 1-Wire modules.
+- `logger.py` - Main sensor logging loop, auto-watering logic, status file handling, and image cleanup.
+- `manage.py` - Command-line tool for hardware/sensor testing, calibration, and database admin.
+- `relays.py` - Relay state management and testing routines.
+- `sensors.py` - Sensor reading (ADS1115, DHT22, DS18B20, BH1750), calibration, voltage-to-percent conversion.
+- `webserver.py` - Flask web server, API endpoints for logs, sensors, relay control, and server status.
+- `requirements.txt` - Python dependencies (see below).
+- `soil_calibration.json` - Stores calibration values for soil moisture sensor.
+- `database.db`, `sensors.db` - SQLite databases for logs and sensor data.
+- `static/` - Static web assets (CSS, JS).
+    - `static/css/`
+    - `static/js/`
+- `templates/` - HTML and image files for Flask rendering.
+    - `index.html`, `all_data.html`
+    - Various favicon and manifest files
 
-First, ensure your Raspberry Pi is running the latest Raspberry Pi OS. Then, enable the necessary hardware interfaces:
+## Web Interface
 
-1.  Run `sudo raspi-config`.
-2.  Navigate to `Interface Options`.
-3.  Enable both `I2C` and `1-Wire`.
-4.  Reboot the Pi when prompted.
+- `/` - Dashboard: latest sensor logs, relay state, logger status.
+- `/all_data` - Full historical data view.
+- `/api/run/start|stop|status` - Start/stop logger, query logger status.
+- `/api/logs` - List recent logs.
+- `/api/logs/all` - Filter logs by value/threshold.
+- `/api/logs/delete` - Delete logs by ID.
+- `/api/sensor/read` - Get current sensor readings.
+- `/api/relay/toggle` - Control relay state.
+- `/api/relay_log` - List relay event history.
+- `/logs/file` - View logger runtime file.
 
-### 2. Clone the Repository
+## Setup & Installation
 
-Clone this project onto your Raspberry Pi:
-```bash
-git clone https://github.com/your-username/chili-automation.git
-cd chili-automation
+### 1. Dependencies
+
+Install Python 3 and pip, then run:
 ```
-
-### 3. Install Dependencies
-
-Install system-level packages and create a Python virtual environment.
-
-```bash
-# Update package lists
-sudo apt-get update
-
-# Install required system libraries
-sudo apt-get install -y python3-pip python3-dev python3-venv
-
-# Create and activate a virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install Python packages
 pip install -r requirements.txt
 ```
-> **Note**: If you encounter issues installing `Adafruit_Python_DHT`, you may need to install it with a specific flag: `pip install Adafruit_Python_DHT --config-settings="--build-option=--force-pi"`
-
-## Running the Application
-
-### 1. Calibrate the Soil Moisture Sensor
-
-For accurate readings, you must first calibrate the soil moisture sensor.
-
-1.  Place the sensor in completely dry soil.
-2.  Run the calibration command:
-    ```bash
-    python3 manage.py calibrate_ads --dry
-    ```
-3.  Place the sensor in fully saturated (wet) soil.
-4.  Run the calibration command again:
-    ```bash
-    python3 manage.py calibrate_ads --wet
-    ```
-    This saves the reference values to `soil_calibration.json`.
-
-### 2. Start the Web Server
-
-The main application is launched via the Flask web server. This server provides the UI and automatically starts the background logger process.
-
-```bash
-python3 webserver.py
+For development on non-Raspberry Pi systems:
+```
+pip install fake-rpi
+export FAKE_RPI=1
 ```
 
-Once running, you can access the web interface by navigating to `http://<your-pi-ip-address>:5000` in a web browser on the same network.
+### 2. Hardware
 
-## Using the Management Tool (`manage.py`)
+Connect sensors to the specified GPIO pins as per `config.py`:
+- **Relay1/2:** Water pump/light
+- **DHT22:** Air temp/humidity
+- **DS18B20:** Soil temp
+- **ADS1115:** Soil moisture
+- **BH1750:** Light
 
-The `manage.py` script is a powerful command-line tool for testing and administration.
+### 3. Running the System
 
-**Usage**: `python3 manage.py <command> [options]`
+- **Logger:** Start via CLI or web interface; periodically logs all sensors and triggers watering.
+- **Web Server:** Run `webserver.py` and visit the dashboard in your browser (default port 5000).
 
-**Commands**:
-- `test_ads`: Read and display data from the soil moisture sensor.
-- `test_dht`: Read and display data from the air temperature/humidity sensor.
-- `test_ds18b20`: Read and display data from the soil temperature sensor.
-- `test_bh1750`: Read and display data from the light sensor.
-- `test_relays`: Sequentially turn both relays on and off.
-- `calibrate_ads`: Calibrate the soil sensor. Use with `--dry` or `--wet`.
-- `get_sql`: Print all sensor data from the database.
-- `delete_sql`: Delete records from the database.
-    - Use `--ids "1,5,10"` to delete specific records.
-    - Use `--ids "5-10"` to delete a range of records.
-    - Use `--all` to delete all records (requires confirmation).
+### 4. CLI Tools
 
-## Project Structure
-
+Use `manage.py` for hardware tests, sensor calibration, and database queries/deletes:
 ```
-.
-├── config.py             # Central configuration for pins, addresses, and settings.
-├── database.py           # Handles all SQLite database interactions.
-├── hardware.py           # Low-level hardware initialization (GPIO, I2C).
-├── logger.py             # Background process for logging data and auto-watering.
-├── manage.py             # CLI tool for testing and administration.
-├── README.md             # This file.
-├── relays.py             # Functions to control the relay module.
-├── requirements.txt      # Python dependencies.
-├── sensors.db            # SQLite database file (created on first run).
-├── sensors.py            # Functions for reading from all sensors.
-├── soil_calibration.json # Stores moisture sensor calibration data.
-├── static/               # CSS and JS for the web interface.
-├── templates/            # HTML templates for the web interface.
-└── webserver.py          # Main Flask application, UI, and API.
+python3 manage.py <command> [options]
 ```
+Commands:
+- `test_ads`, `test_dht`, `test_ds18b20`, `test_relays`, `test_bh1750`
+- `calibrate_ads --dry|--wet`
+- `get_sql`, `delete_sql --all|--ids <ID(s)>`
+
+## Requirements
+
+See [`requirements.txt`](https://github.com/NeedleStacker/chilli/blob/main/requirements.txt):
+- Flask
+- adafruit-blinka
+- adafruit-circuitpython-ads1x15
+- Adafruit_Python_DHT
+- smbus2
+- RPi.GPIO
+- fake-rpi (for non-RPi dev)
+
+## License
+
+*No license specified yet.*
+
+## Author
+
+[NeedleStacker](https://github.com/NeedleStacker)
+
+---
+
+**Language composition:**  
+Rich Text Format (71.6%), Python (15.7%), JavaScript (6.6%), HTML (5.7%), CSS (0.4%)

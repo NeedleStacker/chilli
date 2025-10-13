@@ -1,42 +1,36 @@
 import os
+import glob
+import board
+import busio
 import Adafruit_DHT
+import RPi.GPIO as GPIO
 
-# --- File and Directory Paths ---
-# Base directory of the application.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Path to the soil moisture sensor calibration file.
-CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
-# Path to the SQLite database file.
-DB_FILE = os.path.join(BASE_DIR, "sensors.db")
-# Directory for storing log files.
-LOGS_DIR = os.path.join(BASE_DIR, "logs")
-# File to store the status of the logger process.
-STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
-# File to store the timestamp of the last watering event.
-LAST_WATERING_FILE = os.path.join(BASE_DIR, "last_watering.txt")
+# --- ADS1115 Setup ---
+i2c = busio.I2C(board.SCL, board.SDA)  # I²C se otvara samo jednom!
 
-# --- GPIO Pin Configuration (BCM numbering) ---
-# GPIO pin for the water pump relay.
-RELAY1 = 12
-# GPIO pin for the light relay or other secondary relay.
-RELAY2 = 16
-# GPIO data pin for the DHT22 temperature and humidity sensor.
+# ------------------ GPIO Setup ------------------
+GPIO.setmode(GPIO.BCM)
+
+# --- Relej Setup ---
+RELAY1 = 12  # IN1
+RELAY2 = 16  # IN2
+GPIO.setup(RELAY1, GPIO.OUT, initial=GPIO.HIGH)  # OFF by default (LOW-trigger)
+GPIO.setup(RELAY2, GPIO.OUT, initial=GPIO.HIGH)
+
+# --- DHT22 Setup ---
+DHT_SENSOR = Adafruit_DHT.DHT22
 DHT_PIN = 27
 
-# --- Sensor Types and Addresses ---
-# Type of DHT sensor being used.
-DHT_SENSOR = Adafruit_DHT.DHT22
-# Base directory for 1-Wire devices (e.g., DS18B20 temperature sensor).
-W1_BASE_DIR = '/sys/bus/w1/devices/'
-# I2C address for the BH1750 light sensor.
-BH1750_ADDR = 0x23
+# --- DS18B20 Setup ---
+os.system('modprobe w1-gpio')
+os.system('modprobe w1-therm')
+base_dir = '/sys/bus/w1/devices/'
+device_folder = glob.glob(base_dir + '28-*')[0]
+device_file = device_folder + '/w1_slave'
 
-# --- Application Settings ---
-# Interval in seconds for logging sensor data.
-LOG_INTERVAL_SECONDS = 2400
-# Soil moisture threshold (in percent) for automatic watering.
-WATERING_THRESHOLD_PERCENT = 40.0
-# Duration in seconds for each watering cycle.
-WATERING_DURATION_SECONDS = 10
-# Cooldown period in seconds after watering before another cycle can be triggered.
-WATERING_COOLDOWN_SECONDS = 3600
+# --- Paths ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CALIB_FILE = os.path.join(BASE_DIR, "soil_calibration.json")
+DB_FILE = os.path.join(BASE_DIR, "sensors.db")
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+STATUS_FILE = os.path.join(BASE_DIR, "logger_status.txt")
