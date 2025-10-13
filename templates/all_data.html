@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <title>Chilli - Svi podaci</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { padding:20px; }
+    canvas { max-height:300px; margin-bottom:30px; }
+    table { font-size:0.85rem; }
+  </style>
+</head>
+<body>
+<div class="container-fluid">
+  <h2 class="mb-4">📊 Svi podaci iz baze</h2>
+
+  <div class="mb-4">
+    <label for="whereInput" class="form-label">Filter podataka (SQL WHERE uvjet, npr. <code>soil_percent &gt; 40</code>):</label>
+    <div class="input-group">
+      <input type="text" id="whereInput" class="form-control" value="id > 1000" placeholder="npr. air_temp > 25 AND lux < 1000">
+      <button class="btn btn-primary" onclick="loadData()">Primijeni filter</button>
+    </div>
+	<small class="form-text text-muted mb-1">Primjeri WHERE uvjeta:</small>
+	<div class="d-flex flex-wrap gap-2 mb-3">
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">id &gt; 1000</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">air_temp &gt; 25</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn"
+  onclick="this.textContent = (d => `timestamp BETWEEN '${d[0]}' AND '${d[1]}'`)((() => { const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30); const f = d => d.toISOString().split('T')[0]; return [f(p), f(t)]; })())">
+  timestamp BETWEEN Today-30days AND Today
+</button>
+
+	</div>
+  </div>
+
+  <canvas id="airTempChart"></canvas>
+  <canvas id="airHumidityChart"></canvas>
+  <canvas id="soilTempChart"></canvas>
+  <canvas id="soilMoistureChart"></canvas>
+  <canvas id="luxChart"></canvas>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5>📈 Statistika</h5>
+      <pre id="stats"></pre>
+    </div>
+  </div>
+
+  <h5 class="mt-3">Brisanje podataka</h5>
+  <div class="input-group mb-2">
+    <input id="deleteIdsInput" type="text" class="form-control" placeholder="ID-evi npr: 1,2,3 ili 'all'">
+    <button class="btn btn-danger" id="btnDeleteRows">Obriši</button>
+  </div>
+  <div id="deleteStatus" class="text-muted small"></div>
+
+  <h4 class="mt-4">Tablica svih podataka</h4>
+  <div style="max-height:400px; overflow:auto;">
+    <table class="table table-striped table-sm">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>Vrijeme</th><th>Air T</th><th>Air H</th>
+          <th>Soil T</th><th>Soil %</th><th>Lux</th><th>Stable</th>
+        </tr>
+      </thead>
+      <tbody id="logsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let charts = [];
+
+async function fetchData() {
+  const where = document.getElementById('whereInput').value.trim();
+  const url = where ? `/api/logs/all?where=${encodeURIComponent(where)}` : '/api/logs/all';
+  const r = await fetch(url);
+  return await r.json();
+}
+
+function clearCharts() {
+  charts.forEach(chart => chart.destroy());
+  charts = [];
+}
+
+function calcStats(data) {
+  const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+  return {
+    air_temp: avg(data.map(r => r.air_temp).filter(v => v!==null)),
+    air_humidity: avg(data.map(r => r.air_humidity).filter(v => v!==null)),
+    soil_temp: avg(data.map(r => r.soil_temp).filter(v => v!==null)),
+    soil_percent: avg(data.map(r => r.soil_percent).filter(v => v!==null)),
+    lux: avg(data.map(r => r.lux).filter(v => v!==null))
+  };
+}
+
+function formatTime(ts) {
+  if (!ts) return "";
+  const [date, time] = ts.split('_');
+  const [y, m, d] = date.split('-');
+  const [hh, mm] = time.split('-'); // Split time properly
+  return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
+}
+
+function makeChart(id, label, labels, data, color) {
+  const ctx = document.getElementById(id).getContext('2d');
+  const chart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[{label:label, data:data, borderColor:color, tension:0.2, fill:false}]
+    },
+    options:{ responsive:true, maintainAspectRatio:false }
+  });
+  charts.push(chart);
+}
+
+async function loadData() {
+  const data = await fetchData();
+  clearCharts();
+
+  const labels = data.map(r => formatTime(r.timestamp));
+
+  makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp), 'blue');
+  makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity), 'skyblue');
+  makeChart('soilTempChart', 'Soil Temperature (°C)', labels, data.map(r => r.soil_temp), 'orange');
+  makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent), 'green');
+  makeChart('luxChart', 'Lux', labels, data.map(r => r.lux), 'purple');
+
+  // Tablica
+  const tbody = document.getElementById('logsBody');
+  tbody.innerHTML = "";
+  data.slice().reverse().forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${formatTime(r.timestamp)}</td>
+      <td>${r.air_temp ?? ''}</td>
+      <td>${r.air_humidity ?? ''}</td>
+      <td>${r.soil_temp ?? ''}</td>
+      <td>${r.soil_percent ?? ''}</td>
+      <td>${r.lux ?? ''}</td>
+      <td>${r.stable ? 'DA' : 'NE'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Statistika
+  const stats = calcStats(data);
+  document.getElementById('stats').innerText = JSON.stringify(stats, null, 2);
+}
+
+document.getElementById('btnDeleteRows').addEventListener('click', async () => {
+  const input = document.getElementById('deleteIdsInput').value.trim();
+  const statusEl = document.getElementById('deleteStatus');
+  
+  if (!input) {
+    statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'.";
+    return;
+  }
+
+  const payload = input.toLowerCase() === "all" ? { ids: "all" } : { ids: input };
+  const confirmDelete = confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`);
+  if (!confirmDelete) return;
+
+  try {
+    const res = await fetch('/api/logs/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      statusEl.innerText = `Obrisano: ${data.deleted === "all" ? "svi redovi" : data.deleted + " redova."}`;
+      await loadData(); // Osvježi
+    } else {
+      statusEl.innerText = `Greška: ${data.msg || data.error}`;
+    }
+  } catch (e) {
+    statusEl.innerText = "Greška pri brisanju: " + e.message;
+  }
+});
+
+document.querySelectorAll('.example-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('whereInput').value = btn.innerText;
+  });
+});
+
+window.onload = loadData;
+</script>
+</body>
+</html>

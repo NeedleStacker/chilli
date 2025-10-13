@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="hr">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<title>🌶️ Chilli - kontrolna ploča</title>
+		<!-- Bootstrap 5 CDN -->
+		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+		<!-- Chart.js CDN (mora biti prije main.js) -->
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<!-- Local styles -->
+		<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+	</head>
+	<body>
+		<div class="container-fluid mt-2">
+			<!-- GRAF -->
+			<div id="chart-wrap" style="display: flex; flex-direction: column; gap: 10px;">
+				<!-- GORNJI RED: Air Temp + Soil Temp (lijevo), Lux (desno) -->
+				<div style="display: flex; gap: 10px;">
+					<div style="flex: 2;">
+						<canvas id="tempChart" style="height: 200px;"></canvas>
+					</div>
+					<div style="flex: 2;">
+						<canvas id="luxChart" style="height: 200px;"></canvas>
+					</div>
+				</div>
+				<!-- DONJI RED: Air Humidity (lijevo), Soil % (desno) -->
+				<div style="display: flex; gap: 10px;">
+					<div style="flex: 2;">
+						<canvas id="humChart" style="height: 200px;"></canvas>
+					</div>
+					<div style="flex: 2;">
+						<canvas id="soilChart" style="height: 200px;"></canvas>
+					</div>
+				</div>
+			</div>
+			<div class="row">
+				<!-- Tablica -->
+				<div class="col-md-5 left-table">
+					<div class="row align-items-center mb-3">
+						<!-- Dugme "Svi podaci" -->
+						<div class="col-md-2 d-flex align-items-stretch">
+							<a href="/all_data" class="btn btn-outline-info btn-md w-100 d-flex align-items-center justify-content-center text-center"> 📊 <span class="ms-1">Svi podaci</span>
+							</a>
+						</div>
+						<!-- Brisanje podataka -->
+						<div class="col-md-10">
+							<h5 class="mb-2">Brisanje podataka</h5>
+							<div class="input-group mb-2">
+								<input id="deleteIdsInput" type="text" class="form-control" placeholder="ID-evi npr: 1,2,3 ili 'all'">
+								<button class="btn btn-danger" id="btnDeleteRows">Obriši</button>
+							</div>
+							<div id="deleteStatus" class="text-muted small"></div>
+						</div>
+					</div>
+					<div class="d-flex justify-content-between align-items-center">
+						<h5>Posljednja mjerenja (zadnjih 100)</h5>
+					</div>
+					<table class="table table-sm table-striped">
+						<thead class="table-light">
+							<tr>
+								<th>ID</th>
+								<th>Vrijeme</th>
+								<th>Air T</th>
+								<th>Air H</th>
+								<th>Soil T</th>
+								<th>Soil %</th>
+								<th>Lux</th>
+							</tr>
+						</thead>
+						<tbody id="logsBody"> {% for r in logs %} <tr class="{{ 'unstable' if r.stable == 0 else '' }}">
+								<td>{{ r.id }}</td>
+								<td>{{ r.timestamp }}</td>
+								<td>{{ r.air_temp }}</td>
+								<td>{{ r.air_humidity }}</td>
+								<td>{{ r.soil_temp }}</td>
+								<td>{{ r.soil_percent }}</td>
+								<td>{{ r.lux }}</td>
+							</tr> {% endfor %} </tbody>
+					</table>
+				</div>
+				<!-- Kontrola -->
+				<div class="col-md-7">
+					<div class="row">
+						<div class="col-md-6">
+							<h5 class="mb-2">Pokretanje Logger-a</h5>
+							<div class="d-flex gap-2 mb-2">
+								<button id="btnStartFirst" class="btn btn-success">RUN</button>
+								<button id="btnStop" class="btn btn-danger">STOP</button>
+							</div>
+							<p>Status loggera: <strong id="loggerStatus">{{ 'AKTIVAN' if logger_running else 'STOPIRAN' }}</strong>
+							</p>
+							<p>
+								<strong>Vrijeme pokretanja:</strong>
+								<span id="loggerStatusTXT" class="fw-bold"></span>
+							</p>
+						</div>
+						<div class="col-md-6">
+							<h5 class="mb-2">Releji</h5>
+							<div class="d-flex gap-2 mb-2">
+								<button id="btn-relay1" class="btn btn-outline-warning">Toggle Relej 1</button>
+								<button id="btn-relay2" class="btn btn-outline-warning">Toggle Relej 2</button>
+							</div>
+							<p class="mb-2">STATUS Relej1: <span id="relay1State">{{ 'ON' if relay1 else 'OFF' }}</span>, Relej2: <span id="relay2State">{{ 'ON' if relay2 else 'OFF' }}</span>
+							</p>
+						</div>
+					</div>
+					<h5 class="mb-2">Događaji releja</h5>
+					<table id="relayLogTable" class="table table-sm table-striped table-bordered text-center">
+						<thead>
+							<tr>
+								<th>Vrijeme</th>
+								<th>Relej</th>
+								<th>Akcija</th>
+								<th>Izvor</th>
+							</tr>
+						</thead>
+						<tbody></tbody>
+					</table>
+					<h5 class="mb-2">Senzori</h5>
+					<div class="mb-2">
+						<button id="btn-ads" class="btn btn-outline-secondary me-1">Očitaj ADS</button>
+						<button id="btn-dht" class="btn btn-outline-secondary me-1">Očitaj DHT22</button>
+						<button id="btn-ds18b20" class="btn btn-outline-secondary me-1">Očitaj DS18B20</button>
+						<button id="btn-bh1750" class="btn btn-outline-secondary me-1">Očitaj BH1750</button>
+					</div>
+					<pre id="sensorOutput" style="height:auto; overflow:auto; background:#f8f9fa; padding:10px;"></pre>
+				</div>
+			</div>
+		</div>
+		<!-- main JS (after Chart.js) -->
+		<script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+	</body>
+</html>
