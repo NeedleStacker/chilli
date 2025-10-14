@@ -1,11 +1,6 @@
-import sys
-import fake_rpi
-
-sys.modules['RPi'] = fake_rpi.RPi
-sys.modules['RPi.GPIO'] = fake_rpi.RPi.GPIO
-sys.modules['smbus'] = fake_rpi.smbus
-
+# webserver.py
 import os
+import sys
 import sqlite3
 import subprocess
 import threading
@@ -14,11 +9,13 @@ import relays
 import config
 import database
 import sensors
-import datetime
-
 from flask import Flask, render_template, jsonify, request
+
+# config.py treba imati BASE_DIR, DATABASE_FILE, RELAY1_PIN, RELAY2_PIN
 from config import BASE_DIR, DATABASE_FILE, RELAY1_PIN, RELAY2_PIN
 from relays import get_relay_state, set_relay_state
+from sensors import read_bh1750_light_intensity
+
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
@@ -26,114 +23,126 @@ logger_lock = threading.Lock()
 logger_process = None
 logger_logfile = os.path.join(BASE_DIR, "logger_run.log")
 
-# --- Logger Subprocess Management ---
 
-def is_logger_running() -> bool:
-    """Checks if the logger subprocess is currently running."""
+# ---- Helper: start/stop logger as subprocess (cwd set to BASE_DIR) ----
+def is_logger_running():
     global logger_process
     if logger_process is None:
         return False
     if logger_process.poll() is None:
         return True
-    logger_process = None  # Process has finished
+    # process finished -> clear handle
+    logger_process = None
     return False
 
-def start_logger(mode: str = "run") -> tuple[bool, str]:
-    """
-    Starts the logger.py script as a subprocess.
 
-    Args:
-        mode (str): The mode to pass to logger.py (e.g., 'run', 'run_shared_i2c').
-
-    Returns:
-        tuple[bool, str]: A tuple containing a success flag and a message.
-    """
+def start_logger(mode="run"):
+    """mode is 'run' or 'run_first' (whatever logger.py accepts)."""
     global logger_process
     with logger_lock:
         if is_logger_running():
-            return False, "Logger is already running."
+            return False, "already_running"
+        logger_py = os.path.join(BASE_DIR, "logger.py")
+        if not os.path.isfile(logger_py):
+            return False, f"logger.py not found at {logger_py}"
+        cmd = [sys.executable, logger_py, mode]
+        logfile = open(logger_logfile, "a")
+        # Start as child in cwd=BASE_DIR
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR, stdout=logfile, stderr=logfile)
+        logger_process = proc
+        time.sleep(0.2)
+        if proc.poll() is None:
+            return True, f"started pid={proc.pid}"
+        else:
+            return False, "failed_to_start"
 
-        logger_script_path = os.path.join(BASE_DIR, "logger.py")
-        if not os.path.isfile(logger_script_path):
-            return False, f"logger.py not found at {logger_script_path}"
 
-        command = [sys.executable, logger_script_path, mode]
-        try:
-            logfile = open(logger_logfile, "a")
-            proc = subprocess.Popen(command, cwd=BASE_DIR, stdout=logfile, stderr=logfile)
-            logger_process = proc
-            time.sleep(0.2)  # Give it a moment to start
-            if proc.poll() is None:
-                return True, f"Logger started with PID: {proc.pid}"
-            else:
-                return False, "Failed to start logger process."
-        except (IOError, OSError) as e:
-            return False, f"Error starting logger: {e}"
-
-def stop_logger() -> tuple[bool, str]:
-    """Stops the logger subprocess."""
+def stop_logger():
+    """Zaustavlja logger proces i ažurira STATUS_FILE na STOPPED."""
     global logger_process
     with logger_lock:
         if not is_logger_running():
+            # Ažuriraj file čak i ako nije pokrenut
             try:
                 with open(config.STATUS_FILE, "w") as f:
                     f.write("STOPPED\n")
-            except IOError as e:
-                print(f"[Warning] Could not write to status file: {e}")
-            return False, "Logger is not running."
+            except Exception as e:
+                print(f"[WARN] Ne mogu pisati u STATUS_FILE: {e}")
+            return False, "not_running"
 
         try:
-            pid = logger_process.pid
             logger_process.terminate()
-            logger_process.wait(timeout=2)  # Wait for graceful termination
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            logger_process.kill()  # Force kill if it doesn't terminate
-        finally:
+
+            # Pričekaj do 2 sekunde da proces završi
+            for _ in range(10):
+                if logger_process.poll() is not None:
+                    break
+                time.sleep(0.2)
+
+            # Ako se nije ugasio, ubij ga
+            if logger_process.poll() is None:
+                logger_process.kill()
+
+            pid = logger_process.pid
             logger_process = None
 
-        try:
-            with open(config.STATUS_FILE, "w") as f:
-                f.write("STOPPED")
-        except IOError as e:
-            print(f"[Warning] Could not update status file: {e}")
+            # SAD JE SIGURNO STOPIRAN → ažuriraj status
+            time.sleep(0.1)
+            try:
+                with open(config.STATUS_FILE, "w") as f:
+                    f.write("-.-")
+            except Exception as e:
+                print(f"[WARN] Nije moguće ažurirati STATUS_FILE: {e}")
 
-        return True, f"Logger process (PID: {pid}) stopped."
+            return True, f"stopped pid={pid}"
 
-# --- Database Helper ---
+        except Exception as e:
+            print(f"[ERROR] stop_logger(): {e}")
+            return False, f"error:{e}"
 
-def get_latest_logs(limit: int = 100) -> list[dict]:
-    """Retrieves the last N log entries from the database."""
+
+# ---- DB helper ----
+def get_last_logs(limit=100):
     try:
         conn = sqlite3.connect(DATABASE_FILE)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp, "
-            "soil_raw, soil_voltage, soil_percent, lux, stable "
-            "FROM logs ORDER BY id DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cursor.fetchall()
+        c = conn.cursor()
+        c.execute("SELECT id, timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp, soil_raw, soil_voltage, soil_percent, lux, stable FROM logs ORDER BY id DESC LIMIT ?", (limit,))
+        rows = c.fetchall()
+        # return as list of dicts in ascending time order
+        rows = rows[::-1]
+        rows.reverse()  # Newest is last, oldest is first
+        result = []
+        for r in rows:
+            result.append({
+                "id": r[0],
+                "timestamp": r[1],
+                "air_temp": r[2],
+                "air_humidity": r[3],
+                "soil_temp": r[4],
+                "soil_raw": r[5],
+                "soil_voltage": r[6],
+                "soil_percent": r[7],
+                "lux": r[8],
+                "stable": r[9]
+            })
         conn.close()
-        # Convert rows to dicts and reverse to have the oldest first
-        return [dict(row) for row in reversed(rows)]
-    except sqlite3.Error as e:
-        print(f"[Error] Database query failed: {e}")
+        return result
+    except Exception:
         return []
 
-# --- Flask Routes ---
 
+# ---- ROUTES ----
 @app.route("/")
 def index():
-    """Renders the main dashboard page."""
-    latest_logs = get_latest_logs(limit=50)
-    return render_template(
-        "index.html",
-        logs=latest_logs,
-        relay1_state=get_relay_state(RELAY1_PIN),
-        relay2_state=get_relay_state(RELAY2_PIN),
-        is_logger_running=is_logger_running(),
-    )
+    # pošalji početne podatke (npr. zadnjih 20 zapisa)
+    rows = get_last_logs(limit=50)
+    rows.reverse()  # Newest is last, oldest is first
+    return render_template("index.html",
+                           logs=rows,
+                           relay1=get_relay_state(RELAY1_PIN),
+                           relay2=get_relay_state(RELAY2_PIN),
+                           logger_running=is_logger_running())
+
 
 @app.route("/api/run/start_first", methods=["POST"])
 def api_run_start_first():
@@ -146,143 +155,157 @@ def api_run_stop():
     ok, msg = stop_logger()
     return jsonify({"ok": ok, "msg": msg, "running": is_logger_running()})
 
+
 @app.route("/api/run/status", methods=["GET"])
-def api_logger_status():
-    """API endpoint to get the logger's running status."""
-    return jsonify({
-        "is_running": is_logger_running(),
-        "pid": logger_process.pid if logger_process else None,
-    })
+def api_run_status():
+    return jsonify({"running": is_logger_running(),
+                    "pid": None if logger_process is None else logger_process.pid})
+
 
 @app.route("/api/logs", methods=["GET"])
-def api_get_logs():
-    """API endpoint to get a list of logs."""
+def api_logs():
     limit = int(request.args.get("limit", 100))
-    logs = get_latest_logs(limit=limit)
-    # Map keys to what the frontend expects
-    mapped_logs = []
-    for log in logs:
-        mapped_logs.append({
-            "id": log["id"],
-            "timestamp": log["timestamp"],
-            "air_temp": log["dht22_air_temp"],
-            "air_humidity": log["dht22_humidity"],
-            "soil_temp": log["ds18b20_soil_temp"],
-            "soil_percent": log["soil_percent"],
-            "lux": log["lux"],
-            "stable": log["stable"]
-        })
-    return jsonify(mapped_logs)
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, timestamp,
+               dht22_air_temp AS air_temp,
+               dht22_humidity AS air_humidity,
+               ds18b20_soil_temp AS soil_temp,
+               soil_percent,
+               lux,
+               stable
+        FROM logs
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = [dict(r) for r in c.fetchall()]
+    rows.reverse()  # Newest is last, oldest is first
+    conn.close()
+    return jsonify(rows)
 
-@app.route("/api/logs/all", methods=["GET"])
+@app.route("/api/logs/all")
 def api_logs_all():
-    """API endpoint to query logs with a WHERE clause."""
-    where_clause = request.args.get("where", "")
+    where = request.args.get("where", "")
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    query = """
+        SELECT id, timestamp,
+               dht22_air_temp AS air_temp,
+               dht22_humidity AS air_humidity,
+               ds18b20_soil_temp AS soil_temp,
+               soil_percent,
+               lux,
+               stable
+        FROM logs
+    """
+    if where:
+        query += f" WHERE {where}"
+    query += " ORDER BY id ASC"
     try:
-        conn = sqlite3.connect(DATABASE_FILE)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        query = "SELECT id, timestamp, dht22_air_temp as air_temp, dht22_humidity as air_humidity, ds18b20_soil_temp as soil_temp, soil_percent, lux, stable FROM logs"
-        if where_clause:
-            query += f" WHERE {where_clause}"
-        query += " ORDER BY id ASC"
-        cursor.execute(query)
-        rows = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-        return jsonify(rows)
-    except sqlite3.Error as e:
+        c.execute(query)
+        rows = [dict(r) for r in c.fetchall()]
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    conn.close()
+    return jsonify(rows)
+
 
 @app.route("/all_data")
 def all_data_page():
-    """Renders the page for viewing all historical data."""
     return render_template("all_data.html")
 
 @app.route("/api/sensor/read", methods=["GET"])
-def api_read_sensor():
-    """API endpoint to read a single sensor on demand."""
-    sensor_type = request.args.get("type", "ads")
+def api_sensor_read():
+    t = request.args.get("type", "ads")
     try:
-        if sensor_type == "ads":
+        if t == "ads":
             raw, voltage = sensors.read_soil_moisture_raw()
-            percent = sensors.convert_voltage_to_soil_percentage(voltage)
-            return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": percent})
-        elif sensor_type == "dht":
+            pct = sensors.convert_voltage_to_soil_percentage(voltage)
+            return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": pct})
+        elif t == "dht":
             temp, hum = sensors.read_dht22_sensor()
             return jsonify({"type": "dht", "temperature": temp, "humidity": hum})
-        elif sensor_type == "ds18b20":
+        elif t == "ds18b20":
             temp = sensors.read_ds18b20_temperature()
             return jsonify({"type": "ds18b20", "temperature": temp})
-        elif sensor_type == "bh1750":
-            lux = sensors.read_bh1750_light_intensity()
+        elif t == "bh1750":
+            lux = read_bh1750_light_intensity()
             return jsonify({"type": "bh1750", "lux": lux})
         else:
-            return jsonify({"error": "Unknown sensor type"}), 400
+            return jsonify({"error": "unknown sensor type"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/relay/toggle", methods=["POST"])
-def api_toggle_relay():
-    """API endpoint to toggle a relay's state."""
+def api_relay_toggle():
     try:
         data = request.get_json(force=True)
         relay_num = int(data.get("relay"))
         state = bool(data.get("state"))
 
+        # Mapiranje releja (pretpostavka: RELAY1_PIN, RELAY2_PIN u config.py)
         relay_name = f"RELAY{relay_num}"
         relay_pin = getattr(config, f"{relay_name}_PIN")
 
+        # Fizičko paljenje/gasenje releja
         set_relay_state(relay_pin, state)
-        action = "ON" if state else "OFF"
-        database.insert_relay_log_event(relay_name, action, source="web_ui")
 
-        print(f"[WebUI] Toggled {relay_name} -> {action}")
-        return jsonify({"ok": True, "relay": relay_name, "state": action})
-    except (AttributeError, TypeError, ValueError) as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        # Upis događaja u bazu
+
+        database.insert_relay_event(relay_name, "ON" if state else "OFF", source="button")
+
+        print(f"[LOG] {relay_name} -> {'ON' if state else 'OFF'} (ručno putem web sučelja)")
+
+        return jsonify({"ok": True, "relay": relay_name, "state": "ON" if state else "OFF"})
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# ---- static file for logger log (optional) ----
 @app.route("/logs/file")
-def view_logfile():
-    """Displays the content of the logger's log file."""
+def get_logfile():
     if os.path.isfile(logger_logfile):
         with open(logger_logfile, "r") as f:
-            return f"<pre>{f.read()[-20000:]}</pre>"
-    return "Log file not found."
+            return "<pre>" + f.read()[-20000:] + "</pre>"
+    return "No logfile found."
 
 @app.route("/api/logs/delete", methods=["POST"])
-def api_delete_logs():
-    """API endpoint to delete log records."""
+def api_logs_delete():
     data = request.json
-    ids_to_delete = data.get("ids")
+    ids = data.get("ids", "")
 
     try:
         conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
+        c = conn.cursor()
 
-        if isinstance(ids_to_delete, str) and ids_to_delete.strip().lower() == "all":
-            cursor.execute("DELETE FROM logs")
-            deleted_count = "all"
-        elif isinstance(ids_to_delete, (list, str)):
-            if isinstance(ids_to_delete, str):
-                id_list = [int(x.strip()) for x in ids_to_delete.split(",") if x.strip().isdigit()]
+        if isinstance(ids, str) and ids.strip().lower() == "all":
+            c.execute("DELETE FROM logs")
+            conn.commit()
+            deleted = "all"
+        else:
+            # očekuje string "1,2,3" ili listu [1,2,3]
+            if isinstance(ids, str):
+                id_list = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
+            elif isinstance(ids, list):
+                id_list = [int(x) for x in ids]
             else:
-                id_list = [int(x) for x in ids_to_delete]
+                return jsonify({"ok": False, "msg": "Neispravan format ID-eva"}), 400
 
             if not id_list:
-                return jsonify({"ok": False, "message": "No valid IDs provided"}), 400
+                return jsonify({"ok": False, "msg": "Nema ID-eva za brisanje"}), 400
 
             placeholders = ",".join("?" for _ in id_list)
-            cursor.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
-            deleted_count = cursor.rowcount
-        else:
-            return jsonify({"ok": False, "message": "Invalid ID format"}), 400
+            c.execute(f"DELETE FROM logs WHERE id IN ({placeholders})", id_list)
+            conn.commit()
+            deleted = len(id_list)
 
-        conn.commit()
         conn.close()
-        return jsonify({"ok": True, "deleted_count": deleted_count})
-    except (sqlite3.Error, ValueError) as e:
+        return jsonify({"ok": True, "deleted": deleted})
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/toggle_relay/<relay_id>", methods=["POST"])
@@ -293,48 +316,56 @@ def toggle_relay(relay_id):
 
     # Upis događaja u relay_log tablicu
     try:
-        database.insert_relay_log_event(relay_id, state, source="button")
+
+        database.insert_relay_event(relay_id, state, source="button")
         print(f"[LOG] Relej {relay_id} -> {state}")
     except Exception as e:
         print(f"[WARN] Relay log upis nije uspio: {e}")
 
     return jsonify({"ok": True, "relay": relay_id, "state": state})
 
-
-@app.route("/relay_log_data", methods=["GET"])
+@app.route("/relay_log_data")
 def relay_log_data():
-    """API endpoint to retrieve the latest relay log events."""
-    try:
-        conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT timestamp, relay_name, action, source FROM relay_log ORDER BY timestamp DESC LIMIT 10")
-        rows = cursor.fetchall()
-        conn.close()
+    import sqlite3
+    import datetime
+    conn = sqlite3.connect(DATABASE_FILE)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT timestamp, relay_name, action
+        FROM relay_log
+        ORDER BY timestamp DESC
+        LIMIT 10
+    """)
+    rows = cur.fetchall()
+    conn.close()
 
-        log_data = []
-        for ts, relay, action, source in rows:
-            formatted_ts = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
-            log_data.append({
-                "t": formatted_ts,
+    data = []
+    for ts, relay, action in rows:
+        try:
+            t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S") #"2025-10-07 17:40:01" ➝ "07.10.2025 17:40:01"
+            value = 1 if action.upper() == "ON" else 0
+            data.append({
+                "t": t,
                 "relay": relay.upper(),
-                "action": action.upper(),
-                "v": 1 if action.upper() == "ON" else 0,
-                "source": source
+                "v": value,
+                "action": action.upper()
             })
-        return jsonify(log_data)
-    except (sqlite3.Error, ValueError) as e:
-        print(f"[Warning] Could not parse relay log data: {e}")
-        return jsonify([])
+        except Exception as e:
+            print(f"[WARN] relay_log_data parse error: {e}")
+
+    return jsonify(data)
+
 
 @app.route("/api/status")
-def api_get_status():
-    """API endpoint to get the logger's status from the status file."""
-    if os.path.exists(config.STATUS_FILE):
-        with open(config.STATUS_FILE, "r") as f:
+def api_status():
+    status_file = os.path.join(BASE_DIR, "logger_status.txt")
+    if os.path.exists(status_file):
+        with open(status_file, "r") as f:
             content = f.read().strip()
-        return jsonify({"status": content})
+        return {"status": content}
     else:
-        return jsonify({"status": "Logger not running"})
+        return {"status": "Logger nije pokrenut"}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # run on all interfaces
+    app.run(host="0.0.0.0", port=5000)

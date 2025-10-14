@@ -262,17 +262,17 @@ def calibrate_soil_moisture_sensor(dry: bool = False, wet: bool = False) -> None
 
 # --- Sensor Test Functions ---
 
-def test_dht22_sensor() -> None:
+def test_dht():
     """Tests the DHT22 sensor and prints the readings."""
     temperature, humidity = read_dht22_sensor()
     print(f"DHT22 Sensor: Temperature={temperature}°C, Humidity={humidity}%")
 
-def test_ds18b20_sensor() -> None:
+def test_ds18b20():
     """Tests the DS18B20 sensor and prints the reading."""
     temperature = read_ds18b20_temperature()
     print(f"DS18B20 Sensor: Soil Temperature={temperature}°C")
 
-def test_ads1115_sensor() -> None:
+def test_ads():
     """Tests the ADS1115 sensor and prints the readings."""
     raw, voltage = read_soil_moisture_raw()
     percent = convert_voltage_to_soil_percentage(voltage, debug=True)
@@ -280,3 +280,6 @@ def test_ads1115_sensor() -> None:
         f"ADS1115 Sensor: raw={raw}, voltage={voltage or 0.0:.3f} V"
         f" -> Soil Moisture: {percent:.3f} %"
     )
+
+def calibrate_ads(dry=False, wet=False):
+    calibrate_soil_moisture_sensor(dry, wet)

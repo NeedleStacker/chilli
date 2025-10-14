@@ -32,7 +32,7 @@ def get_relay_state(pin: int) -> bool:
     """
     return GPIO.input(pin) == GPIO.LOW
 
-def run_relay_test_sequence() -> None:
+def test_relays() -> None:
     """Runs a test sequence to toggle both relays."""
     print("Testing relays...")
     print("Relay 1 ON, Relay 2 OFF")
@@ -55,12 +55,12 @@ def run_relay_test_sequence() -> None:
     )
     print("Test complete.")
 
-def set_both_relays(is_on: bool) -> None:
+def set_all_relays(is_on: bool) -> None:
     """Sets both relays to the same state."""
     set_relay_state(RELAY1_PIN, is_on)
     set_relay_state(RELAY2_PIN, is_on)
 
-def get_all_relay_states() -> Dict[str, bool]:
+def get_all_relays() -> Dict[str, bool]:
     """
     Returns a dictionary with the current state of both relays.
 
