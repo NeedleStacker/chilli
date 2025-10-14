@@ -4,16 +4,24 @@ import os
 import glob
 import argparse
 import RPi.GPIO as GPIO
+import logging
+from typing import Optional
 
 from relays import init_relays, test_relays, set_relay_state, RELAY1
-from config import LOGS_DIR, DHT_SENSOR_TYPE, DHT_SENSOR_PIN, STATUS_FILE
+from config import LOGS_DIR, DHT_SENSOR, DHT_PIN, STATUS_FILE
 from database import init_db, delete_sql_data, get_sql_data
 from sensors import (
     test_dht, test_ads, test_ds18b20, calibrate_ads,
     read_ds18b20_temp, read_soil_raw_shared, read_soil_raw_fresh,
     read_soil_percent_from_voltage, read_bh1750_lux
 )
-# from camera import capture_image
+
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 # pragovi za automatsko zalijevanje
 WATERING_THRESHOLD = 40.0      # %
@@ -21,15 +29,20 @@ WATERING_DURATION = 10         # sekundi
 WATERING_COOLDOWN = 3600       # sekundi (1h)
 LAST_WATERING_FILE = "last_watering.txt"
 
-def cleanup_old_images(folder, months=3):
+def cleanup_old_images(folder: str, months: int = 3) -> None:
+    """Removes JPG files older than a specified number of months from a folder."""
     now = time.time()
     cutoff = now - (months * 30 * 24 * 3600)
     for f in glob.glob(os.path.join(folder, "*.jpg")):
-        if os.path.getmtime(f) < cutoff:
-            os.remove(f)
+        try:
+            if os.path.getmtime(f) < cutoff:
+                os.remove(f)
+                logging.info(f"Removed old image: {f}")
+        except OSError as e:
+            logging.error(f"Error removing file {f}: {e}")
 
 
-def should_water(soil_percent):
+def should_water(soil_percent: Optional[float]) -> bool:
     """Provjerava prag vlage i cooldown."""
     if soil_percent is None:
         return False
@@ -42,7 +55,7 @@ def should_water(soil_percent):
             with open(LAST_WATERING_FILE, "r") as f:
                 last_ts = float(f.read().strip())
             if time.time() - last_ts < WATERING_COOLDOWN:
-                print("[AUTO] Preskačem zalijevanje (cooldown).")
+                logging.info("Preskačem zalijevanje (cooldown).")
                 return False
         except Exception:
             pass
@@ -50,18 +63,18 @@ def should_water(soil_percent):
     return True
 
 
-def perform_watering():
+def perform_watering() -> None:
     """Aktivira pumpu uz safety logiku."""
-    print(f"[AUTO] Uključujem pumpu na {WATERING_DURATION}s ...")
+    logging.info(f"Uključujem pumpu na {WATERING_DURATION}s ...")
     set_relay_state(RELAY1, True)
     time.sleep(WATERING_DURATION)
     set_relay_state(RELAY1, False)
     with open(LAST_WATERING_FILE, "w") as f:
         f.write(str(time.time()))
-    print("[AUTO] Zalijevanje završeno.")
+    logging.info("Zalijevanje završeno.")
 
 
-def run_logger(cold_first=False):
+def run_logger(cold_first: bool = False) -> None:
     """Glavna petlja logiranja senzora."""
     now = datetime.datetime.now().strftime("%d.%m.%Y. u %H:%M:%S")
     pid = os.getpid()
@@ -69,7 +82,7 @@ def run_logger(cold_first=False):
     with open(STATUS_FILE, "w") as f:
         f.write(f"{now} (PID: {pid})")
         f.flush()
-        os.fsync(f.fileno())  # forsira upis na disk
+        os.fsync(f.fileno())
 
     init_relays()
     conn = init_db()
@@ -80,35 +93,29 @@ def run_logger(cold_first=False):
         while True:
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
-            # --- BH1750 ---
             lux = read_bh1750_lux()
 
-            # --- Soil ---
             if cold_first:
                 soil_raw, soil_voltage = read_soil_raw_fresh()
             else:
                 soil_raw, soil_voltage = read_soil_raw_shared()
             soil_percent = read_soil_percent_from_voltage(soil_voltage)
 
-            # --- DHT22 ---
             humidity, temperature = None, None
             try:
                 import Adafruit_DHT
-                humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR_TYPE, DHT_SENSOR_PIN)
+                humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
             except Exception as e:
-                print(f"[DHT22] Greška: {e}")
+                logging.error(f"DHT22 Greška: {e}")
 
-            # --- DS18B20 ---
             temp_ds18b20 = read_ds18b20_temp()
 
-            # --- Zaokruživanja ---
             humidity = round(humidity, 3) if humidity is not None else None
             temperature = round(temperature, 3) if temperature is not None else None
             temp_ds18b20 = round(temp_ds18b20, 3) if temp_ds18b20 is not None else None
             soil_voltage = round(soil_voltage, 3) if soil_voltage is not None else None
             soil_percent = round(soil_percent, 3) if soil_percent is not None else None
 
-            # flag stabilnosti
             stable_flag = 1
 
             c.execute("""
@@ -127,20 +134,21 @@ def run_logger(cold_first=False):
                 lux,
                 stable_flag
             ))
-
             conn.commit()
 
             mode_tag = "COLD" if cold_first else "SHARED"
-            print(f"[{timestamp}] ({mode_tag}) "
-                  f"Temp zraka:{temperature}C, Vlaga:{humidity}%, "
-                  f"Temp zemlje:{temp_ds18b20}C, Soil%:{soil_percent}%, "
-                  f"Lux:{lux}, STABLE={stable_flag}")
+            logging.info(
+                f"({mode_tag}) "
+                f"Temp zraka:{temperature}C, Vlaga:{humidity}%, "
+                f"Temp zemlje:{temp_ds18b20}C, Soil%:{soil_percent}%, "
+                f"Lux:{lux}, STABLE={stable_flag}"
+            )
 
             cleanup_old_images(LOGS_DIR, months=3)
-            time.sleep(2400)  # svakih 2400 sec = 40 min
+            time.sleep(2400)
 
     except KeyboardInterrupt:
-        print("Zaustavljeno od strane korisnika.")
+        logging.info("Zaustavljeno od strane korisnika.")
     finally:
         GPIO.cleanup()
         conn.close()
