@@ -12,9 +12,9 @@ import sensors
 from flask import Flask, render_template, jsonify, request
 
 # config.py treba imati BASE_DIR, DATABASE_FILE, RELAY1_PIN, RELAY2_PIN
-from config import BASE_DIR, DATABASE_FILE, RELAY1_PIN, RELAY2_PIN
+from config import BASE_DIR, DB_FILE, RELAY1, RELAY2
 from relays import get_relay_state, set_relay_state
-from sensors import read_bh1750_light_intensity
+from sensors import read_bh1750_lux
 
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
@@ -104,7 +104,7 @@ def stop_logger():
 # ---- DB helper ----
 def get_last_logs(limit=100):
     try:
-        conn = sqlite3.connect(DATABASE_FILE)
+        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT id, timestamp, dht22_air_temp, dht22_humidity, ds18b20_soil_temp, soil_raw, soil_voltage, soil_percent, lux, stable FROM logs ORDER BY id DESC LIMIT ?", (limit,))
         rows = c.fetchall()
@@ -139,8 +139,8 @@ def index():
     rows.reverse()  # Newest is last, oldest is first
     return render_template("index.html",
                            logs=rows,
-                           relay1=get_relay_state(RELAY1_PIN),
-                           relay2=get_relay_state(RELAY2_PIN),
+                           relay1=get_relay_state(RELAY1),
+                           relay2=get_relay_state(RELAY2),
                            logger_running=is_logger_running())
 
 
@@ -165,7 +165,7 @@ def api_run_status():
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
     limit = int(request.args.get("limit", 100))
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
@@ -188,7 +188,7 @@ def api_logs():
 @app.route("/api/logs/all")
 def api_logs_all():
     where = request.args.get("where", "")
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     query = """
@@ -222,17 +222,20 @@ def api_sensor_read():
     t = request.args.get("type", "ads")
     try:
         if t == "ads":
-            raw, voltage = sensors.read_soil_moisture_raw()
-            pct = sensors.convert_voltage_to_soil_percentage(voltage)
+            try:
+                raw, voltage = sensors.read_soil_raw(use_shared=False)
+            except TypeError:
+                raw, voltage = sensors.read_soil_raw()
+            pct = sensors.read_soil_percent(voltage=voltage)
             return jsonify({"type": "ads", "raw": raw, "voltage": voltage, "percent": pct})
         elif t == "dht":
-            temp, hum = sensors.read_dht22_sensor()
+            temp, hum = sensors.test_dht()
             return jsonify({"type": "dht", "temperature": temp, "humidity": hum})
         elif t == "ds18b20":
-            temp = sensors.read_ds18b20_temperature()
+            temp = sensors.test_ds18b20()
             return jsonify({"type": "ds18b20", "temperature": temp})
         elif t == "bh1750":
-            lux = read_bh1750_light_intensity()
+            lux = read_bh1750_lux()
             return jsonify({"type": "bh1750", "lux": lux})
         else:
             return jsonify({"error": "unknown sensor type"}), 400
@@ -246,12 +249,12 @@ def api_relay_toggle():
         relay_num = int(data.get("relay"))
         state = bool(data.get("state"))
 
-        # Mapiranje releja (pretpostavka: RELAY1_PIN, RELAY2_PIN u config.py)
+        # Mapiranje releja (pretpostavka: RELAY1, RELAY2 u config.py)
         relay_name = f"RELAY{relay_num}"
-        relay_pin = getattr(config, f"{relay_name}_PIN")
+        relay_pin = getattr(config, relay_name)
 
         # Fizičko paljenje/gasenje releja
-        set_relay_state(relay_pin, state)
+        relays.set_relay_state(relay_pin, state)
 
         # Upis događaja u bazu
 
@@ -279,7 +282,7 @@ def api_logs_delete():
     ids = data.get("ids", "")
 
     try:
-        conn = sqlite3.connect(DATABASE_FILE)
+        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
 
         if isinstance(ids, str) and ids.strip().lower() == "all":
@@ -312,7 +315,7 @@ def api_logs_delete():
 def toggle_relay(relay_id):
     state = request.form.get("state")  # "ON" ili "OFF"
     relay_pin = getattr(config, relay_id)
-    set_relay_state(relay_pin, state == "ON")
+    relays.set_relay_state(relay_pin, state == "ON")
 
     # Upis događaja u relay_log tablicu
     try:
@@ -328,7 +331,7 @@ def toggle_relay(relay_id):
 def relay_log_data():
     import sqlite3
     import datetime
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute("""
         SELECT timestamp, relay_name, action

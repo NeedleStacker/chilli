@@ -6,7 +6,7 @@ import argparse
 import RPi.GPIO as GPIO
 
 from relays import init_relays, test_relays, set_relay_state, RELAY1
-from config import LOGS_DIR, DHT_SENSOR, DHT_PIN, STATUS_FILE
+from config import LOGS_DIR, DHT_SENSOR_TYPE, DHT_SENSOR_PIN, STATUS_FILE
 from database import init_db, delete_sql_data, get_sql_data
 from sensors import (
     test_dht, test_ads, test_ds18b20, calibrate_ads,
@@ -94,7 +94,7 @@ def run_logger(cold_first=False):
             humidity, temperature = None, None
             try:
                 import Adafruit_DHT
-                humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
+                humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR_TYPE, DHT_SENSOR_PIN)
             except Exception as e:
                 print(f"[DHT22] Greška: {e}")
 
