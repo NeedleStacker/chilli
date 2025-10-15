@@ -252,7 +252,15 @@ def api_logs_delete():
             conn.commit()
             deleted = "all"
         else:
-            id_list = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()] if isinstance(ids, str) else [int(x) for x in ids]
+            id_list = []
+            for part in ids.split(','):
+                part = part.strip()
+                if '-' in part:
+                    start, end = part.split('-')
+                    id_list.extend(range(int(start), int(end) + 1))
+                else:
+                    id_list.append(int(part))
+
             if not id_list:
                 return jsonify({"ok": False, "msg": "Nema ID-eva za brisanje"}), 400
             placeholders = ",".join("?" for _ in id_list)
