@@ -271,20 +271,6 @@ def api_logs_delete():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/toggle_relay/<relay_id>", methods=["POST"])
-def toggle_relay(relay_id: str):
-    state = request.form.get("state")
-    relay_pin = getattr(config, relay_id)
-    relays.set_relay_state(relay_pin, state == "ON")
-    try:
-        import database
-        database.insert_relay_event(relay_id, state, source="button")
-        print(f"[LOG] Relej {relay_id} -> {state}")
-    except Exception as e:
-        print(f"[WARN] Relay log upis nije uspio: {e}")
-    return jsonify({"ok": True, "relay": relay_id, "state": state})
-
-
 @app.route("/relay_log_data")
 def relay_log_data():
     conn = sqlite3.connect(DB_FILE)

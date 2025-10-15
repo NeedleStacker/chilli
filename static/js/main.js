@@ -429,6 +429,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 		document.getElementById('relay1State').innerText = relay === 1 ? (target ? 'ON' : 'OFF') : document.getElementById('relay1State').innerText;
 		document.getElementById('relay2State').innerText = relay === 2 ? (target ? 'ON' : 'OFF') : document.getElementById('relay2State').innerText;
+		loadRelayLogTable();
 	}
 
 	async function updateLoggerStatus() {
@@ -496,7 +497,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			statusEl.innerText = "Greška pri brisanju: " + e.message;
 		}
 	});
-	
+
 	document.getElementById('btn-ads').addEventListener('click', function() {
         readSensor('ads');
     });
@@ -522,5 +523,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	updateChartAndTable();
 	window.loadRelayLogTable();
-	loadRelayChart();
+	if (document.getElementById('relayChart')) {
+		loadRelayChart();
+	}
 }); /* DOMContentLoaded */
