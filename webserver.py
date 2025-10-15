@@ -5,6 +5,7 @@ import threading
 import time
 from typing import List, Dict, Any, Tuple, Optional
 import datetime
+import sys
 
 import relays
 import config
