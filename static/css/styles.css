@@ -2,12 +2,12 @@
   --background-color: #f8f9fa;
   --text-color: #212529;
   --card-background: #ffffff;
+  --table-header-background: #e9ecef; /* Malo svjetlija pozadina za header */
   --table-stripe-color: #f2f2f2;
   --border-color: #dee2e6;
   --input-background: #fff;
   --input-text: #495057;
-  --button-background: #0d6efd;
-  --button-text: #fff;
+  --input-dark-background: #e9ecef; /* Pozadina za tamne inpute */
   --chart-background: #f0f0f0;
   --chart-grid-color: rgba(0, 0, 0, 0.1);
   --chart-label-color: #666;
@@ -17,12 +17,12 @@
   --background-color: #1a1a1a;
   --text-color: #e8e6e3;
   --card-background: #2a2a2a;
+  --table-header-background: #343a40; /* Malo svjetlija tamna pozadina */
   --table-stripe-color: #2c3034;
   --border-color: #444;
   --input-background: #333;
   --input-text: #e8e6e3;
-  --button-background: #007bff;
-  --button-text: #ffffff;
+  --input-dark-background: #212529; /* Značajno tamnija pozadina za inpute */
   --chart-background: #333333;
   --chart-grid-color: rgba(255, 255, 255, 0.1);
   --chart-label-color: #ccc;
@@ -46,30 +46,15 @@ body {
   overflow: auto;
 }
 
-td,
-th {
+td, th {
   font-size: 0.85rem;
   border-color: var(--border-color);
 }
 
-.table {
-    color: var(--text-color);
-}
-
-.table-striped>tbody>tr:nth-of-type(odd)>* {
-    background-color: var(--table-stripe-color);
-    color: var(--text-color);
-}
-
-.table-striped>tbody>tr:nth-of-type(even)>* {
-    background-color: var(--background-color);
-    color: var(--text-color);
-}
-
-.table-light {
-    --bs-table-bg: var(--card-background);
-    --bs-table-border-color: var(--border-color);
-}
+.table { color: var(--text-color); }
+.table-striped>tbody>tr:nth-of-type(odd)>* { background-color: var(--table-stripe-color); color: var(--text-color); }
+.table-striped>tbody>tr:nth-of-type(even)>* { background-color: var(--background-color); color: var(--text-color); }
+.table-light { --bs-table-bg: var(--card-background); --bs-table-border-color: var(--border-color); }
 
 .table-container {
     max-height: 60vh;
@@ -79,21 +64,31 @@ th {
 }
 
 .table thead th {
-    position: -webkit-sticky; /* For Safari */
+    position: -webkit-sticky;
     position: sticky;
     top: 0;
     z-index: 1;
-    background-color: var(--card-background); /* Pozadina za header */
+    background-color: var(--table-header-background); /* Koristi novu varijablu */
     border-bottom: 2px solid var(--border-color);
 }
 
-.unstable {
-  background-color: #fff3cd !important;
+/* Stilovi za input polja */
+#deleteIdsInput, #whereInput {
+    background-color: var(--input-dark-background);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+pre#sensorOutput {
+    background-color: var(--input-dark-background) !important;
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    white-space: pre-wrap; /* Omogućuje prelamanje teksta */
+    word-break: break-all;
 }
 
-[data-theme="dark"] .unstable {
-  background-color: #665d1e !important;
-}
+
+.unstable { background-color: #fff3cd !important; }
+[data-theme="dark"] .unstable { background-color: #665d1e !important; }
 
 canvas {
   background-color: var(--chart-background);
@@ -106,11 +101,10 @@ canvas {
   font-size: 0.95rem;
 }
 
-pre {
-  background-color: var(--card-background);
-  border: 1px solid var(--border-color);
+pre#stats {
+    background-color: var(--card-background);
+    border: 1px solid var(--border-color);
 }
-
 
 #theme-switcher {
   position: fixed;
@@ -138,11 +132,6 @@ pre {
 
 /* Responsive fixes */
 @media (max-width: 768px) {
-  #chart-wrap > div {
-    flex-direction: column;
-  }
-  canvas {
-    width: 100% !important;
-    height: 200px !important;
-  }
+  #chart-wrap > div { flex-direction: column; }
+  canvas { width: 100% !important; height: 200px !important; }
 }
