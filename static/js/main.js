@@ -289,4 +289,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Pokreni logiku specifičnu za stranicu
     initIndexPage();
+
+    // Odaslji dogadaj da je glavna skripta spremna
+    document.dispatchEvent(new CustomEvent('mainScriptReady'));
 });

@@ -68,7 +68,7 @@
 <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 <!-- Logika specifična za ovu stranicu -->
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('mainScriptReady', () => {
     let charts = [];
 
     async function fetchData() {
