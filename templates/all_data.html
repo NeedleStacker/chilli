@@ -66,10 +66,11 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // ------- Logika za promjenu teme (kopirano iz main.js) -------
+    let charts = [];
+
+    // ------- Logika za promjenu teme -------
     const themeSwitcher = document.getElementById('theme-switcher');
     const docHtml = document.documentElement;
-    let registeredCharts = [];
 
     function updateAllChartColors() {
         const theme = docHtml.getAttribute('data-theme') || 'light';
@@ -77,21 +78,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const gridColor = getComputedStyle(docHtml).getPropertyValue('--chart-grid-color').trim();
         const labelColor = getComputedStyle(docHtml).getPropertyValue('--chart-label-color').trim();
         const chartColors = {
-            airTemp: { border: isDark ? '#58a6ff' : '#0d6efd', bg: 'rgba(88, 166, 255, 0.2)' },
-            soilTemp: { border: isDark ? '#56d364' : '#198754', bg: 'rgba(86, 211, 100, 0.2)' },
-            airHum: { border: isDark ? '#e3b341' : '#ffc107', bg: 'rgba(227, 179, 65, 0.2)' },
-            soilPercent: { border: isDark ? '#d2a679' : '#8B4513', bg: 'rgba(210, 166, 121, 0.2)' },
-            lux: { border: isDark ? '#c991e1' : '#800080', bg: 'rgba(201, 145, 225, 0.2)' },
+            airTemp: { border: isDark ? '#58a6ff' : 'blue', bg: 'rgba(88, 166, 255, 0.2)' },
+            airHum: { border: isDark ? '#80d4ff' : 'skyblue', bg: 'rgba(128, 212, 255, 0.2)' },
+            soilTemp: { border: isDark ? '#ffc966' : 'orange', bg: 'rgba(255, 201, 102, 0.2)' },
+            soilMoisture: { border: isDark ? '#80ff80' : 'green', bg: 'rgba(128, 255, 128, 0.2)' },
+            lux: { border: isDark ? '#d980ff' : 'purple', bg: 'rgba(217, 128, 255, 0.2)' },
         };
         const getColor = (label) => {
             if (label.includes('Air Temperature')) return chartColors.airTemp;
-            if (label.includes('Soil Temperature')) return chartColors.soilTemp;
             if (label.includes('Air Humidity')) return chartColors.airHum;
-            if (label.includes('Soil Moisture')) return chartColors.soilPercent;
+            if (label.includes('Soil Temperature')) return chartColors.soilTemp;
+            if (label.includes('Soil Moisture')) return chartColors.soilMoisture;
             if (label.includes('Lux')) return chartColors.lux;
             return { border: 'gray', bg: 'rgba(128,128,128,0.1)' };
         };
-        registeredCharts.forEach(chart => {
+        charts.forEach(chart => {
             if (chart.options.scales.x) { chart.options.scales.x.grid.color = gridColor; chart.options.scales.x.ticks.color = labelColor; }
             if (chart.options.scales.y) { chart.options.scales.y.grid.color = gridColor; chart.options.scales.y.ticks.color = labelColor; }
             if (chart.options.plugins.legend) { chart.options.plugins.legend.labels.color = labelColor; }
@@ -99,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const colors = getColor(dataset.label);
                 dataset.borderColor = colors.border;
                 dataset.backgroundColor = colors.bg;
+                dataset.fill = true;
             });
             chart.update();
         });
@@ -116,9 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTheme(currentTheme === 'light' ? 'dark' : 'light');
     });
 
-    // ------- Logika specifična za ovu stranicu -------
-    let charts = [];
-
+    // ------- Originalna logika stranice -------
     async function fetchData() {
       const where = document.getElementById('whereInput').value.trim();
       const url = where ? `/api/logs/all?where=${encodeURIComponent(where)}` : '/api/logs/all';
@@ -133,7 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearCharts() {
       charts.forEach(chart => chart.destroy());
       charts = [];
-      registeredCharts = []; // Isprazni i registrirane grafikone
     }
 
     function calcStats(data) {
@@ -158,26 +157,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
     }
 
-    function makeChart(id, label, labels, data) {
+    function makeChart(id, label, labels, data, color) {
       const ctx = document.getElementById(id).getContext('2d');
       const chart = new Chart(ctx, {
-        type:'line', data:{ labels:labels, datasets:[{label:label, data:data, tension:0.2, fill:true}]},
+        type:'line', data:{ labels:labels, datasets:[{label:label, data:data, borderColor:color, tension:0.2, fill:false}]},
         options:{ responsive:true, maintainAspectRatio:false }
       });
       charts.push(chart);
-      registeredCharts.push(chart);
     }
 
     async function loadData() {
       const data = await fetchData();
       clearCharts();
       const labels = data.map(r => formatTime(r.timestamp));
-      makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp));
-      makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity));
-      makeChart('soilTempChart', 'Soil Temperature (°C)', labels, data.map(r => r.soil_temp));
-      makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent));
-      makeChart('luxChart', 'Lux', labels, data.map(r => r.lux));
-      updateAllChartColors();
+      makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp), 'blue');
+      makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity), 'skyblue');
+      makeChart('soilTempChart', 'Soil Temperature (°C)', labels, data.map(r => r.soil_temp), 'orange');
+      makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent), 'green');
+      makeChart('luxChart', 'Lux', labels, data.map(r => r.lux), 'purple');
+      updateAllChartColors(); // Preboji grafikone nakon sto su stvoreni
 
       const tbody = document.getElementById('logsBody');
       tbody.innerHTML = "";
