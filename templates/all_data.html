@@ -5,28 +5,34 @@
   <title>Chilli - Svi podaci</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <style>
+    body { padding:20px; }
+    canvas { max-height:300px; margin-bottom:30px; }
+    table { font-size:0.85rem; }
+  </style>
 </head>
 <body>
-<div id="theme-switcher">🌙</div>
 <div class="container-fluid">
-  <a href="/" class="btn btn-outline-secondary mt-3 mb-3">Povratak na glavnu ploču</a>
   <h2 class="mb-4">📊 Svi podaci iz baze</h2>
 
   <div class="mb-4">
     <label for="whereInput" class="form-label">Filter podataka (SQL WHERE uvjet, npr. <code>soil_percent &gt; 40</code>):</label>
     <div class="input-group">
-      <input type="text" id="whereInput" class="form-control" value="" placeholder="npr. air_temp > 25 AND lux < 1000">
-      <button id="applyFilterBtn" class="btn btn-primary">Primijeni filter</button>
+      <input type="text" id="whereInput" class="form-control" value="id > 1000" placeholder="npr. air_temp > 25 AND lux < 1000">
+      <button class="btn btn-primary" onclick="loadData()">Primijeni filter</button>
     </div>
 	<small class="form-text text-muted mb-1">Primjeri WHERE uvjeta:</small>
 	<div class="d-flex flex-wrap gap-2 mb-3">
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="id &gt; 1000">id &gt; 1000</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="air_temp &gt; 25">air_temp &gt; 25</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="soil_percent &lt; 30">soil_percent &lt; 30</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="lux &lt; 500">lux &lt; 500</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="stable = 0">stable = 0</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" id="dateRangeBtn">zadnjih 30 dana</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">id &gt; 1000</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">air_temp &gt; 25</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn"
+  onclick="this.textContent = (d => `timestamp BETWEEN '${d[0]}' AND '${d[1]}'`)((() => { const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30); const f = d => d.toISOString().split('T')[0]; return [f(p), f(t)]; })())">
+  timestamp BETWEEN Today-30days AND Today
+</button>
+
 	</div>
   </div>
 
@@ -51,7 +57,7 @@
   <div id="deleteStatus" class="text-muted small"></div>
 
   <h4 class="mt-4">Tablica svih podataka</h4>
-  <div class="table-container" style="max-height:60vh; overflow:auto;">
+  <div style="max-height:400px; overflow:auto;">
     <table class="table table-striped table-sm">
       <thead class="table-light">
         <tr>
@@ -65,166 +71,125 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    let charts = [];
+let charts = [];
 
-    // ------- Logika za promjenu teme -------
-    const themeSwitcher = document.getElementById('theme-switcher');
-    const docHtml = document.documentElement;
+async function fetchData() {
+  const where = document.getElementById('whereInput').value.trim();
+  const url = where ? `/api/logs/all?where=${encodeURIComponent(where)}` : '/api/logs/all';
+  const r = await fetch(url);
+  return await r.json();
+}
 
-    function updateAllChartColors() {
-        const theme = docHtml.getAttribute('data-theme') || 'light';
-        const isDark = theme === 'dark';
-        const gridColor = getComputedStyle(docHtml).getPropertyValue('--chart-grid-color').trim();
-        const labelColor = getComputedStyle(docHtml).getPropertyValue('--chart-label-color').trim();
-        const chartColors = {
-            airTemp: { border: isDark ? '#58a6ff' : 'blue', bg: 'rgba(88, 166, 255, 0.2)' },
-            airHum: { border: isDark ? '#80d4ff' : 'skyblue', bg: 'rgba(128, 212, 255, 0.2)' },
-            soilTemp: { border: isDark ? '#ffc966' : 'orange', bg: 'rgba(255, 201, 102, 0.2)' },
-            soilMoisture: { border: isDark ? '#80ff80' : 'green', bg: 'rgba(128, 255, 128, 0.2)' },
-            lux: { border: isDark ? '#d980ff' : 'purple', bg: 'rgba(217, 128, 255, 0.2)' },
-        };
-        const getColor = (label) => {
-            if (label.includes('Air Temperature')) return chartColors.airTemp;
-            if (label.includes('Air Humidity')) return chartColors.airHum;
-            if (label.includes('Soil Temperature')) return chartColors.soilTemp;
-            if (label.includes('Soil Moisture')) return chartColors.soilMoisture;
-            if (label.includes('Lux')) return chartColors.lux;
-            return { border: 'gray', bg: 'rgba(128,128,128,0.1)' };
-        };
-        charts.forEach(chart => {
-            if (chart.options.scales.x) { chart.options.scales.x.grid.color = gridColor; chart.options.scales.x.ticks.color = labelColor; }
-            if (chart.options.scales.y) { chart.options.scales.y.grid.color = gridColor; chart.options.scales.y.ticks.color = labelColor; }
-            if (chart.options.plugins.legend) { chart.options.plugins.legend.labels.color = labelColor; }
-            chart.data.datasets.forEach(dataset => {
-                const colors = getColor(dataset.label);
-                dataset.borderColor = colors.border;
-                dataset.backgroundColor = colors.bg;
-                dataset.fill = true;
-            });
-            chart.update();
-        });
-    }
+function clearCharts() {
+  charts.forEach(chart => chart.destroy());
+  charts = [];
+}
 
-    function setTheme(theme) {
-        docHtml.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-        themeSwitcher.textContent = theme === 'dark' ? '☀️' : '🌙';
-        updateAllChartColors();
-    }
+function calcStats(data) {
+  const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+  return {
+    air_temp: avg(data.map(r => r.air_temp).filter(v => v!==null)),
+    air_humidity: avg(data.map(r => r.air_humidity).filter(v => v!==null)),
+    soil_temp: avg(data.map(r => r.soil_temp).filter(v => v!==null)),
+    soil_percent: avg(data.map(r => r.soil_percent).filter(v => v!==null)),
+    lux: avg(data.map(r => r.lux).filter(v => v!==null))
+  };
+}
 
-    themeSwitcher.addEventListener('click', () => {
-        const currentTheme = docHtml.getAttribute('data-theme') || 'light';
-        setTheme(currentTheme === 'light' ? 'dark' : 'light');
+function formatTime(ts) {
+  if (!ts) return "";
+  const [date, time] = ts.split('_');
+  const [y, m, d] = date.split('-');
+  const [hh, mm] = time.split('-'); // Split time properly
+  return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
+}
+
+function makeChart(id, label, labels, data, color) {
+  const ctx = document.getElementById(id).getContext('2d');
+  const chart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[{label:label, data:data, borderColor:color, tension:0.2, fill:false}]
+    },
+    options:{ responsive:true, maintainAspectRatio:false }
+  });
+  charts.push(chart);
+}
+
+async function loadData() {
+  const data = await fetchData();
+  clearCharts();
+
+  const labels = data.map(r => formatTime(r.timestamp));
+
+  makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp), 'blue');
+  makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity), 'skyblue');
+  makeChart('soilTempChart', 'Soil Temperature (°C)', labels, data.map(r => r.soil_temp), 'orange');
+  makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent), 'green');
+  makeChart('luxChart', 'Lux', labels, data.map(r => r.lux), 'purple');
+
+  // Tablica
+  const tbody = document.getElementById('logsBody');
+  tbody.innerHTML = "";
+  data.slice().reverse().forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${formatTime(r.timestamp)}</td>
+      <td>${r.air_temp ?? ''}</td>
+      <td>${r.air_humidity ?? ''}</td>
+      <td>${r.soil_temp ?? ''}</td>
+      <td>${r.soil_percent ?? ''}</td>
+      <td>${r.lux ?? ''}</td>
+      <td>${r.stable ? 'DA' : 'NE'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Statistika
+  const stats = calcStats(data);
+  document.getElementById('stats').innerText = JSON.stringify(stats, null, 2);
+}
+
+document.getElementById('btnDeleteRows').addEventListener('click', async () => {
+  const input = document.getElementById('deleteIdsInput').value.trim();
+  const statusEl = document.getElementById('deleteStatus');
+  
+  if (!input) {
+    statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'.";
+    return;
+  }
+
+  const payload = input.toLowerCase() === "all" ? { ids: "all" } : { ids: input };
+  const confirmDelete = confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`);
+  if (!confirmDelete) return;
+
+  try {
+    const res = await fetch('/api/logs/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
     });
+    const data = await res.json();
 
-    // ------- Originalna logika stranice -------
-    async function fetchData() {
-      const where = document.getElementById('whereInput').value.trim();
-      const url = where ? `/api/logs/all?where=${encodeURIComponent(where)}` : '/api/logs/all';
-      const r = await fetch(url);
-      if (!r.ok) {
-          alert("Greška pri dohvaćanju podataka. Provjerite SQL filter.");
-          return [];
-      }
-      return await r.json();
+    if (data.ok) {
+      statusEl.innerText = `Obrisano: ${data.deleted === "all" ? "svi redovi" : data.deleted + " redova."}`;
+      await loadData(); // Osvježi
+    } else {
+      statusEl.innerText = `Greška: ${data.msg || data.error}`;
     }
-
-    function clearCharts() {
-      charts.forEach(chart => chart.destroy());
-      charts = [];
-    }
-
-    function calcStats(data) {
-        if (data.length === 0) return {};
-        const avg = arr => arr.length > 0 ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-        return {
-            air_temp: avg(data.map(r => r.air_temp).filter(v => v!==null)),
-            air_humidity: avg(data.map(r => r.air_humidity).filter(v => v!==null)),
-            soil_temp: avg(data.map(r => r.soil_temp).filter(v => v!==null)),
-            soil_percent: avg(data.map(r => r.soil_percent).filter(v => v!==null)),
-            lux: avg(data.map(r => r.lux).filter(v => v!==null))
-        };
-    }
-
-    function formatTime(ts) {
-        if (!ts) return "";
-        const parts = ts.split('_');
-        if (parts.length < 2) return ts;
-        const [date, time] = parts;
-        const [y, m, d] = date.split('-');
-        const [hh, mm] = time.split('-');
-        return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
-    }
-
-    function makeChart(id, label, labels, data, color) {
-      const ctx = document.getElementById(id).getContext('2d');
-      const chart = new Chart(ctx, {
-        type:'line', data:{ labels:labels, datasets:[{label:label, data:data, borderColor:color, tension:0.2, fill:false}]},
-        options:{ responsive:true, maintainAspectRatio:false }
-      });
-      charts.push(chart);
-    }
-
-    async function loadData() {
-      const data = await fetchData();
-      clearCharts();
-      const labels = data.map(r => formatTime(r.timestamp));
-      makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp), 'blue');
-      makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity), 'skyblue');
-      makeChart('soilTempChart', 'Soil Temperature (°C)', labels, data.map(r => r.soil_temp), 'orange');
-      makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent), 'green');
-      makeChart('luxChart', 'Lux', labels, data.map(r => r.lux), 'purple');
-      updateAllChartColors(); // Preboji grafikone nakon sto su stvoreni
-
-      const tbody = document.getElementById('logsBody');
-      tbody.innerHTML = "";
-      data.slice().reverse().forEach(r => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.id}</td><td>${formatTime(r.timestamp)}</td><td>${r.air_temp ?? ''}</td><td>${r.air_humidity ?? ''}</td><td>${r.soil_temp ?? ''}</td><td>${r.soil_percent ?? ''}</td><td>${r.lux ?? ''}</td><td>${r.stable ? 'DA' : 'NE'}</td>`;
-        tbody.appendChild(tr);
-      });
-      const stats = calcStats(data);
-      document.getElementById('stats').innerText = JSON.stringify(stats, null, 2);
-    }
-
-    document.getElementById('applyFilterBtn').addEventListener('click', loadData);
-    document.querySelectorAll('.example-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const filter = e.target.dataset.filter;
-        if (filter) { document.getElementById('whereInput').value = filter; }
-      });
-    });
-    document.getElementById('dateRangeBtn').addEventListener('click', () => {
-        const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30);
-        const f = d => d.toISOString().split('T')[0];
-        document.getElementById('whereInput').value = `timestamp BETWEEN '${f(p)}' AND '${f(t)}'`;
-    });
-
-    const btnDeleteRows = document.getElementById('btnDeleteRows');
-    if (btnDeleteRows) {
-        btnDeleteRows.addEventListener('click', async () => {
-            const inputEl = document.getElementById('deleteIdsInput');
-            const statusEl = document.getElementById('deleteStatus');
-            if (!inputEl || !statusEl) return;
-            const input = inputEl.value.trim();
-            if (!input) { statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'."; return; }
-            if (!confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`)) return;
-            try {
-                const res = await fetch('/api/logs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: input }) });
-                const data = await res.json();
-                statusEl.innerText = data.ok ? `Obrisano: ${data.deleted === "all" ? "svi redovi" : data.deleted + " redova."}` : `Greška: ${data.msg || data.error}`;
-                if (data.ok) loadData();
-            } catch (e) { statusEl.innerText = "Greška pri brisanju: " + e.message; }
-        });
-    }
-
-    // Inicijalizacija
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    setTheme(savedTheme);
-    loadData();
+  } catch (e) {
+    statusEl.innerText = "Greška pri brisanju: " + e.message;
+  }
 });
-</script>
 
+document.querySelectorAll('.example-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('whereInput').value = btn.innerText;
+  });
+});
+
+window.onload = loadData;
+</script>
 </body>
 </html>

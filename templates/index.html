@@ -12,7 +12,6 @@
 		<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 	</head>
 	<body>
-		<div id="theme-switcher">🌙</div>
 		<div class="container-fluid mt-2">
 			<!-- GRAF -->
 			<div id="chart-wrap" style="display: flex; flex-direction: column; gap: 10px;">
@@ -57,10 +56,9 @@
 					<div class="d-flex justify-content-between align-items-center">
 						<h5>Posljednja mjerenja (zadnjih 100)</h5>
 					</div>
-					<div class="table-container">
-						<table class="table table-sm table-striped">
-							<thead class="table-light">
-								<tr>
+					<table class="table table-sm table-striped">
+						<thead class="table-light">
+							<tr>
 								<th>ID</th>
 								<th>Vrijeme</th>
 								<th>Air T</th>
@@ -79,8 +77,7 @@
 								<td>{{ r.soil_percent }}</td>
 								<td>{{ r.lux }}</td>
 							</tr> {% endfor %} </tbody>
-						</table>
-					</div>
+					</table>
 				</div>
 				<!-- Kontrola -->
 				<div class="col-md-7">
@@ -109,10 +106,9 @@
 						</div>
 					</div>
 					<h5 class="mb-2">Događaji releja</h5>
-					<div class="table-container">
-						<table id="relayLogTable" class="table table-sm table-striped table-bordered text-center">
-							<thead>
-								<tr>
+					<table id="relayLogTable" class="table table-sm table-striped table-bordered text-center">
+						<thead>
+							<tr>
 								<th>Vrijeme</th>
 								<th>Relej</th>
 								<th>Akcija</th>
@@ -121,7 +117,6 @@
 						</thead>
 						<tbody></tbody>
 					</table>
-					</div>
 					<h5 class="mb-2">Senzori</h5>
 					<div class="mb-2">
 						<button id="btn-ads" class="btn btn-outline-secondary me-1">Očitaj ADS</button>
@@ -129,7 +124,7 @@
 						<button id="btn-ds18b20" class="btn btn-outline-secondary me-1">Očitaj DS18B20</button>
 						<button id="btn-bh1750" class="btn btn-outline-secondary me-1">Očitaj BH1750</button>
 					</div>
-					<pre id="sensorOutput" style="height:auto; overflow:auto; padding:10px;"></pre>
+					<pre id="sensorOutput" style="height:auto; overflow:auto; background:#f8f9fa; padding:10px;"></pre>
 				</div>
 			</div>
 		</div>
