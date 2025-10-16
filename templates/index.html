@@ -57,9 +57,10 @@
 					<div class="d-flex justify-content-between align-items-center">
 						<h5>Posljednja mjerenja (zadnjih 100)</h5>
 					</div>
-					<table class="table table-sm table-striped">
-						<thead class="table-light">
-							<tr>
+					<div class="table-container">
+						<table class="table table-sm table-striped">
+							<thead class="table-light">
+								<tr>
 								<th>ID</th>
 								<th>Vrijeme</th>
 								<th>Air T</th>
@@ -78,7 +79,8 @@
 								<td>{{ r.soil_percent }}</td>
 								<td>{{ r.lux }}</td>
 							</tr> {% endfor %} </tbody>
-					</table>
+						</table>
+					</div>
 				</div>
 				<!-- Kontrola -->
 				<div class="col-md-7">
@@ -107,9 +109,10 @@
 						</div>
 					</div>
 					<h5 class="mb-2">Događaji releja</h5>
-					<table id="relayLogTable" class="table table-sm table-striped table-bordered text-center">
-						<thead>
-							<tr>
+					<div class="table-container" style="max-height: 200px;">
+						<table id="relayLogTable" class="table table-sm table-striped table-bordered text-center">
+							<thead>
+								<tr>
 								<th>Vrijeme</th>
 								<th>Relej</th>
 								<th>Akcija</th>
@@ -118,6 +121,7 @@
 						</thead>
 						<tbody></tbody>
 					</table>
+					</div>
 					<h5 class="mb-2">Senzori</h5>
 					<div class="mb-2">
 						<button id="btn-ads" class="btn btn-outline-secondary me-1">Očitaj ADS</button>
