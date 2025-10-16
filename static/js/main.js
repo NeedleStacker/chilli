@@ -1,8 +1,8 @@
 /* main.js - globalna JS logika */
 document.addEventListener("DOMContentLoaded", () => {
 
-    // ------- Globalni pomoćnici -------
-    window.formatTime = function(ts) {
+    // ------- Pomoćne funkcije -------
+    function formatTime(ts) {
         if (!ts) return "";
         const parts = ts.split('_');
         if (parts.length < 2) return ts;
@@ -22,23 +22,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const docHtml = document.documentElement;
     let registeredCharts = [];
 
-    // Funkcija za registraciju novog grafa
-    window.registerChart = (chart) => {
+    function registerChart(chart) {
         if (chart) {
             registeredCharts.push(chart);
         }
     }
 
-    // Funkcija za ažuriranje boja SVIH registriranih grafova
-    window.updateAllChartColors = () => {
+    function updateAllChartColors() {
         const theme = docHtml.getAttribute('data-theme') || 'light';
         const isDark = theme === 'dark';
-
         const gridColor = getComputedStyle(docHtml).getPropertyValue('--chart-grid-color').trim();
         const labelColor = getComputedStyle(docHtml).getPropertyValue('--chart-label-color').trim();
-
         const chartColors = {
-            // Definicije boja ostaju iste...
             airTemp: { border: isDark ? '#58a6ff' : '#0d6efd', bg: isDark ? 'rgba(88, 166, 255, 0.2)' : 'rgba(0,123,255,0.1)'},
             soilTemp: { border: isDark ? '#56d364' : '#198754', bg: isDark ? 'rgba(86, 211, 100, 0.2)' : 'rgba(40,167,69,0.1)'},
             airHum: { border: isDark ? '#e3b341' : '#ffc107', bg: isDark ? 'rgba(227, 179, 65, 0.2)' : 'rgba(255,165,0,0.15)'},
@@ -48,7 +43,6 @@ document.addEventListener("DOMContentLoaded", () => {
             relay2: { border: isDark ? '#60a5fa' : '#0d6efd', bg: isDark ? 'rgba(96, 165, 250, 0.25)' : 'rgba(54, 162, 235, 0.25)'},
         };
 
-        // Funkcija za mapiranje labela na boje
         const getColor = (label) => {
             if (label.includes('Air Temp')) return chartColors.airTemp;
             if (label.includes('Soil Temp')) return chartColors.soilTemp;
@@ -57,30 +51,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (label.includes('Lux')) return chartColors.lux;
             if (label.includes('Relej 1')) return chartColors.relay1;
             if (label.includes('Relej 2')) return chartColors.relay2;
-            return { border: 'gray', bg: 'rgba(128,128,128,0.1)' }; // Fallback
+            return { border: 'gray', bg: 'rgba(128,128,128,0.1)' };
         };
 
         registeredCharts.forEach(chart => {
-            // Ažuriranje općih opcija
-            if (chart.options.scales.x) {
-                chart.options.scales.x.grid.color = gridColor;
-                chart.options.scales.x.ticks.color = labelColor;
-            }
-            if (chart.options.scales.y) {
-                chart.options.scales.y.grid.color = gridColor;
-                chart.options.scales.y.ticks.color = labelColor;
-            }
-            if (chart.options.plugins.legend) {
-                chart.options.plugins.legend.labels.color = labelColor;
-            }
-
-            // Ažuriranje boja dataseta
+            if (chart.options.scales.x) { chart.options.scales.x.grid.color = gridColor; chart.options.scales.x.ticks.color = labelColor; }
+            if (chart.options.scales.y) { chart.options.scales.y.grid.color = gridColor; chart.options.scales.y.ticks.color = labelColor; }
+            if (chart.options.plugins.legend) { chart.options.plugins.legend.labels.color = labelColor; }
             chart.data.datasets.forEach(dataset => {
                 const colors = getColor(dataset.label);
                 dataset.borderColor = colors.border;
                 dataset.backgroundColor = colors.bg;
             });
-
             chart.update();
         });
     }
@@ -88,10 +70,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function setTheme(theme) {
         docHtml.setAttribute('data-theme', theme);
         localStorage.setItem('theme', theme);
-        if (themeSwitcher) {
-            themeSwitcher.textContent = theme === 'dark' ? '☀️' : '🌙';
-        }
-        window.updateAllChartColors();
+        if (themeSwitcher) { themeSwitcher.textContent = theme === 'dark' ? '☀️' : '🌙'; }
+        updateAllChartColors();
     }
 
     if (themeSwitcher) {
@@ -103,7 +83,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ------- Logika specifična za glavnu stranicu (index.html) -------
     function initIndexPage() {
-        // Pokreni samo na glavnoj stranici
         if (!document.getElementById('chart-wrap')) return;
 
         const commonChartOptions = {
@@ -113,10 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         const tempChart = new Chart(document.getElementById('tempChart').getContext('2d'), {
-            type: 'line', data: { labels: [], datasets: [
-                { label: 'Air Temp °C', data: [], fill: true, tension: 0.2 },
-                { label: 'Soil Temp °C', data: [], fill: true, tension: 0.2 }
-            ]},
+            type: 'line', data: { labels: [], datasets: [{ label: 'Air Temp °C', data: [], fill: true, tension: 0.2 }, { label: 'Soil Temp °C', data: [], fill: true, tension: 0.2 }]},
             options: { ...commonChartOptions, scales: { y: { min: 0, max: 50 } } }
         });
         const humChart = new Chart(document.getElementById('humChart').getContext('2d'), {
@@ -132,49 +108,34 @@ document.addEventListener("DOMContentLoaded", () => {
             options: { ...commonChartOptions }
         });
 
-        // Registriraj grafikone za praćenje teme
-        [tempChart, humChart, soilChart, luxChart].forEach(window.registerChart);
-
-        let relayChart = null; // Specifično za ovu stranicu
+        [tempChart, humChart, soilChart, luxChart].forEach(registerChart);
 
         async function updateChartAndTable() {
             const rows = await fetchJSON('/api/logs?limit=100');
-            const labels = rows.map(r => window.formatTime(r.timestamp));
-
-            // Ažuriranje podataka grafikona
+            const labels = rows.map(r => formatTime(r.timestamp));
             tempChart.data.labels = labels;
             tempChart.data.datasets[0].data = rows.map(r => r.air_temp);
             tempChart.data.datasets[1].data = rows.map(r => r.soil_temp);
-
             humChart.data.labels = labels;
             humChart.data.datasets[0].data = rows.map(r => r.air_humidity);
-
             soilChart.data.labels = labels;
             soilChart.data.datasets[0].data = rows.map(r => r.soil_percent);
-
             luxChart.data.labels = labels;
             luxChart.data.datasets[0].data = rows.map(r => r.lux);
-
             [tempChart, humChart, soilChart, luxChart].forEach(c => c.update());
 
-            // Ažuriranje tablice
             const tbody = document.getElementById('logsBody');
             if (tbody) {
                 tbody.innerHTML = "";
                 rows.slice().reverse().forEach(r => {
                     const tr = document.createElement('tr');
                     if (r.stable === 0) tr.classList.add('unstable');
-                    tr.innerHTML = `<td>${r.id}</td><td>${window.formatTime(r.timestamp)}</td><td>${r.air_temp ?? ''}</td><td>${r.air_humidity ?? ''}</td><td>${r.soil_temp ?? ''}</td><td>${r.soil_percent ?? ''}</td><td>${r.lux ?? ''}</td>`;
+                    tr.innerHTML = `<td>${r.id}</td><td>${formatTime(r.timestamp)}</td><td>${r.air_temp ?? ''}</td><td>${r.air_humidity ?? ''}</td><td>${r.soil_temp ?? ''}</td><td>${r.soil_percent ?? ''}</td><td>${r.lux ?? ''}</td>`;
                     tbody.appendChild(tr);
                 });
             }
-             window.updateAllChartColors();
+             updateAllChartColors();
         }
-
-        // ... ostale funkcije i event listeneri za index.html
-         // ------- Ovdje idu ostale funkcije i event listeneri specifični za index.html -------
-        // (npr. loadRelayLogTable, toggleRelay, updateLoggerStatus, readSensor, itd.)
-        // Važno je da svaka od njih provjerava postojanje elemenata s kojima radi.
 
         async function loadRelayLogTable() {
             const tbody = document.querySelector('#relayLogTable tbody');
@@ -192,10 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const stateEl = document.getElementById(`relay${relay}State`);
             if (!stateEl) return;
             const cur = stateEl.innerText === 'ON';
-            await fetch('/api/relay/toggle', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ relay: relay, state: !cur })
-            });
+            await fetch('/api/relay/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ relay: relay, state: !cur }) });
             stateEl.innerText = !cur ? 'ON' : 'OFF';
             loadRelayLogTable();
         }
@@ -213,7 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Event listeneri
         const btnStartFirst = document.getElementById('btnStartFirst');
         if (btnStartFirst) btnStartFirst.addEventListener('click', async () => {
             const res = await fetchJSON('/api/run/start_first', { method: 'POST' });
@@ -228,7 +185,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if(statusEl) statusEl.innerText = res.running ? "AKTIVAN" : "STOPIRAN";
         });
 
-        // Ostali listeneri...
         ['ads', 'dht', 'ds18b20', 'bh1750'].forEach(type => {
             const btn = document.getElementById(`btn-${type}`);
             if (btn) btn.addEventListener('click', () => {
@@ -239,57 +195,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const btnRelay1 = document.getElementById('btn-relay1');
         if (btnRelay1) btnRelay1.addEventListener('click', () => toggleRelay(1));
-
         const btnRelay2 = document.getElementById('btn-relay2');
         if (btnRelay2) btnRelay2.addEventListener('click', () => toggleRelay(2));
 
-        // Inicijalno učitavanje
+        const btnDeleteRows = document.getElementById('btnDeleteRows');
+        if (btnDeleteRows) {
+            btnDeleteRows.addEventListener('click', async () => {
+                const inputEl = document.getElementById('deleteIdsInput');
+                const statusEl = document.getElementById('deleteStatus');
+                if (!inputEl || !statusEl) return;
+                const input = inputEl.value.trim();
+                if (!input) { statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'."; return; }
+                if (!confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`)) return;
+                try {
+                    const res = await fetchJSON('/api/logs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: input }) });
+                    statusEl.innerText = res.ok ? `Obrisano: ${res.deleted === "all" ? "svi redovi" : res.deleted + " redova."}` : `Greška: ${res.msg || res.error}`;
+                    if (res.ok) updateChartAndTable();
+                } catch (e) { statusEl.innerText = "Greška pri brisanju: " + e.message; }
+            });
+        }
+
         updateLoggerStatus();
         updateChartAndTable();
         loadRelayLogTable();
-    }
-
-    // ------- Logika za brisanje (zajednička za obje stranice) -------
-    const btnDeleteRows = document.getElementById('btnDeleteRows');
-    if (btnDeleteRows) {
-        btnDeleteRows.addEventListener('click', async () => {
-            const inputEl = document.getElementById('deleteIdsInput');
-            const statusEl = document.getElementById('deleteStatus');
-            if (!inputEl || !statusEl) return;
-
-            const input = inputEl.value.trim();
-            if (!input) {
-                statusEl.innerText = "Unesite ID-eve za brisanje ili 'all'.";
-                return;
-            }
-
-            if (!confirm(`Jeste li sigurni da želite obrisati ${input === "all" ? "SVE redove" : "ove redove: " + input}?`)) return;
-
-            try {
-                const res = await fetchJSON('/api/logs/delete', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: input })
-                });
-                statusEl.innerText = res.ok ? `Obrisano: ${res.deleted === "all" ? "svi redovi" : res.deleted + " redova."}` : `Greška: ${res.msg || res.error}`;
-                // Ako postoji globalna funkcija za ponovno učitavanje podataka, pozovi je
-                if (res.ok && window.loadData) {
-                    window.loadData();
-                } else if (res.ok && window.updateChartAndTable) {
-                    window.updateChartAndTable();
-                }
-            } catch (e) {
-                statusEl.innerText = "Greška pri brisanju: " + e.message;
-            }
-        });
     }
 
     // ------- Inicijalizacija -------
     const savedTheme = localStorage.getItem('theme') || 'light';
     setTheme(savedTheme);
 
-    // Pokreni logiku specifičnu za stranicu
     initIndexPage();
-
-    // Odaslji dogadaj da je glavna skripta spremna
-    document.dispatchEvent(new CustomEvent('mainScriptReady'));
 });
