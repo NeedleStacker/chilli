@@ -103,8 +103,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ------- Logika specifična za glavnu stranicu (index.html) -------
     function initIndexPage() {
-        // Provjeri postoji li element specifičan za index.html
-        if (!document.getElementById('tempChart')) return;
+        // Pokreni samo na glavnoj stranici
+        if (!document.getElementById('chart-wrap')) return;
 
         const commonChartOptions = {
             responsive: true, maintainAspectRatio: false,

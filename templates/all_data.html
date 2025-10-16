@@ -16,21 +16,17 @@
   <div class="mb-4">
     <label for="whereInput" class="form-label">Filter podataka (SQL WHERE uvjet, npr. <code>soil_percent &gt; 40</code>):</label>
     <div class="input-group">
-      <input type="text" id="whereInput" class="form-control" value="id > 1000" placeholder="npr. air_temp > 25 AND lux < 1000">
-      <button class="btn btn-primary" onclick="loadData()">Primijeni filter</button>
+      <input type="text" id="whereInput" class="form-control" value="" placeholder="npr. air_temp > 25 AND lux < 1000">
+      <button id="applyFilterBtn" class="btn btn-primary">Primijeni filter</button>
     </div>
 	<small class="form-text text-muted mb-1">Primjeri WHERE uvjeta:</small>
 	<div class="d-flex flex-wrap gap-2 mb-3">
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">id &gt; 1000</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">air_temp &gt; 25</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn"
-  onclick="this.textContent = (d => `timestamp BETWEEN '${d[0]}' AND '${d[1]}'`)((() => { const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30); const f = d => d.toISOString().split('T')[0]; return [f(p), f(t)]; })())">
-  timestamp BETWEEN Today-30days AND Today
-</button>
-
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="id &gt; 1000">id &gt; 1000</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="air_temp &gt; 25">air_temp &gt; 25</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="soil_percent &lt; 30">soil_percent &lt; 30</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="lux &lt; 500">lux &lt; 500</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" data-filter="stable = 0">stable = 0</button>
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn" id="dateRangeBtn">zadnjih 30 dana</button>
 	</div>
   </div>
 
@@ -93,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function calcStats(data) {
         if (data.length === 0) return {};
-      const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+      const avg = arr => arr.length > 0 ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
       return {
         air_temp: avg(data.map(r => r.air_temp).filter(v => v!==null)),
         air_humidity: avg(data.map(r => r.air_humidity).filter(v => v!==null)),
@@ -114,13 +110,8 @@ document.addEventListener('DOMContentLoaded', () => {
         options:{ responsive:true, maintainAspectRatio:false }
       });
       charts.push(chart);
-      // Registriraj graf za praćenje teme
       if (window.registerChart) {
           window.registerChart(chart);
-      }
-      // Odmah primijeni boje teme
-      if (window.updateAllChartColors) {
-          window.updateAllChartColors();
       }
     }
 
@@ -128,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await fetchData();
       clearCharts();
 
-      const labels = data.map(r => window.formatTime(r.timestamp)); // Koristi globalnu funkciju
+      const labels = data.map(r => window.formatTime(r.timestamp));
 
       makeChart('airTempChart', 'Air Temperature (°C)', labels, data.map(r => r.air_temp));
       makeChart('airHumidityChart', 'Air Humidity (%)', labels, data.map(r => r.air_humidity));
@@ -136,7 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
       makeChart('soilMoistureChart', 'Soil Moisture (%)', labels, data.map(r => r.soil_percent));
       makeChart('luxChart', 'Lux', labels, data.map(r => r.lux));
 
-      // Tablica
+      if (window.updateAllChartColors) {
+          window.updateAllChartColors();
+      }
+
       const tbody = document.getElementById('logsBody');
       tbody.innerHTML = "";
       data.slice().reverse().forEach(r => {
@@ -153,22 +147,28 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.appendChild(tr);
       });
 
-      // Statistika
       const stats = calcStats(data);
       document.getElementById('stats').innerText = JSON.stringify(stats, null, 2);
     }
 
-    // Izloži funkciju globalno da bi je `onclick` mogao pozvati
     window.loadData = loadData;
+
+    document.getElementById('applyFilterBtn').addEventListener('click', loadData);
 
     document.querySelectorAll('.example-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        // Provjeri postoji li funkcija za generiranje datuma
-        if (e.target.onclick) {
-            e.target.onclick.call(e.target); // Izvrši inline onclick
+        const filter = e.target.dataset.filter;
+        if (filter) {
+            document.getElementById('whereInput').value = filter;
         }
-        document.getElementById('whereInput').value = e.target.textContent;
       });
+    });
+
+    document.getElementById('dateRangeBtn').addEventListener('click', () => {
+        const t = new Date(), p = new Date();
+        p.setDate(t.getDate() - 30);
+        const f = d => d.toISOString().split('T')[0];
+        document.getElementById('whereInput').value = `timestamp BETWEEN '${f(p)}' AND '${f(t)}'`;
     });
 
     loadData();
