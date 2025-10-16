@@ -71,6 +71,22 @@ th {
     --bs-table-border-color: var(--border-color);
 }
 
+.table-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: .25rem;
+}
+
+.table thead th {
+    position: -webkit-sticky; /* For Safari */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--card-background); /* Pozadina za header */
+    border-bottom: 2px solid var(--border-color);
+}
+
 .unstable {
   background-color: #fff3cd !important;
 }
