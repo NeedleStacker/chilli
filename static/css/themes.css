@@ -17,6 +17,7 @@
   --input-bg-color: #333333;
   --input-text-color: #f0f0f0;
   --button-outline-color: #0dcaf0;
+  --panel-bg-color: #333333; /* Same as input background */
 }
 
 [data-theme="light"] {
@@ -60,7 +61,17 @@ body {
 }
 
 .table thead th {
-    background-color: var(--table-header-bg) !important; /* Use !important to override Bootstrap styles */
+    background-color: var(--table-header-bg) !important;
+    color: var(--text-color);
+}
+
+.table.themed-table tbody,
+.table:not(.themed-table) tbody {
+    background-color: var(--panel-bg-color);
+}
+
+#sensorOutput {
+    background-color: var(--panel-bg-color) !important;
     color: var(--text-color);
 }
 

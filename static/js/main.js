@@ -42,9 +42,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	// ------- Chart Theming -------
 	const getThemeColors = () => {
 		const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+		const rootStyles = getComputedStyle(document.documentElement);
+
 		if (theme === 'dark') {
 			return {
-				backgroundColor: '#242424',
+				backgroundColor: rootStyles.getPropertyValue('--panel-bg-color').trim(),
 				borderColor: '#0dcaf0',
 				gridColor: 'rgba(255, 255, 255, 0.15)',
 				textColor: '#f0f0f0'
