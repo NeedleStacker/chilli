@@ -120,6 +120,46 @@ function formatTime(ts) {
   return `${d}.${m}.${y.slice(-2)} ${hh}:${mm}`;
 }
 
+const getThemeColors = () => {
+    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    if (theme === 'dark') {
+        return {
+            backgroundColor: '#2a2a2a',
+            borderColor: '#0dcaf0',
+            gridColor: 'rgba(255, 255, 255, 0.1)',
+            textColor: '#e0e0e0'
+        };
+    }
+    return {
+        backgroundColor: '#f8f9fa',
+        borderColor: '#0d6efd',
+        gridColor: 'rgba(0, 0, 0, 0.1)',
+        textColor: '#212529'
+    };
+};
+
+const createChartOptions = () => {
+    const themeColors = getThemeColors();
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            y: {
+                ticks: { color: themeColors.textColor },
+                grid: { color: themeColors.gridColor }
+            },
+            x: {
+                ticks: { color: themeColors.textColor },
+                grid: { color: themeColors.gridColor }
+            }
+        },
+        plugins: {
+            legend: { labels: { color: themeColors.textColor } }
+        }
+    };
+};
+
 function makeChart(id, label, labels, data, color) {
   const ctx = document.getElementById(id).getContext('2d');
   const chart = new Chart(ctx, {
@@ -128,10 +168,22 @@ function makeChart(id, label, labels, data, color) {
       labels:labels,
       datasets:[{label:label, data:data, borderColor:color, tension:0.2, fill:false}]
     },
-    options:{ responsive:true, maintainAspectRatio:false }
+    options: createChartOptions()
   });
   charts.push(chart);
 }
+
+document.querySelectorAll('.theme-select').forEach(item => {
+    item.addEventListener('click', () => {
+        setTimeout(() => {
+            const newOptions = createChartOptions();
+            charts.forEach(chart => {
+                chart.options = newOptions;
+                chart.update();
+            });
+        }, 50);
+    });
+});
 
 async function loadData() {
   const data = await fetchData();
