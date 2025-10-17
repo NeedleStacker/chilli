@@ -10,12 +10,12 @@
 }
 
 [data-theme="dark"] {
-  --background-color: #121212;
-  --text-color: #e0e0e0;
-  --card-bg-color: #1e1e1e;
-  --table-header-bg: #2a2a2a;
-  --input-bg-color: #2a2a2a;
-  --input-text-color: #e0e0e0;
+  --background-color: #1a1a1a;
+  --text-color: #f0f0f0;
+  --card-bg-color: #242424;
+  --table-header-bg: #333333;
+  --input-bg-color: #333333;
+  --input-text-color: #f0f0f0;
   --button-outline-color: #0dcaf0;
 }
 
