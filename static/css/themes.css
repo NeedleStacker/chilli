@@ -6,6 +6,8 @@
   --table-header-bg: #454c52;
   --input-bg-color: #495057;
   --input-text-color: #f8f9fa;
+  --table-striped-bg: #2c2c2c;
+  --table-hover-bg: #3a3a3a;
   --button-outline-color: #0dcaf0;
 }
 
@@ -16,6 +18,8 @@
   --table-header-bg: #333333;
   --input-bg-color: #333333;
   --input-text-color: #f0f0f0;
+  --table-striped-bg: #2c2c2c;
+  --table-hover-bg: #3a3a3a;
   --button-outline-color: #0dcaf0;
   --panel-bg-color: #333333; /* Same as input background */
 }
@@ -27,6 +31,8 @@
   --table-header-bg: #e9ecef;
   --input-bg-color: #ffffff;
   --input-text-color: #212529;
+  --table-striped-bg: rgba(0, 0, 0, 0.05);
+  --table-hover-bg: rgba(0, 0, 0, 0.075);
   --button-outline-color: #0dcaf0;
 }
 
@@ -37,6 +43,8 @@
   --table-header-bg: #FFE082;
   --input-bg-color: #FFFDE7;
   --input-text-color: #5D4037;
+  --table-striped-bg: #FAF3E0;
+  --table-hover-bg: #F5E8C7;
   --button-outline-color: #8D6E63;
 }
 
@@ -60,22 +68,23 @@ body {
   background-color: var(--card-bg-color);
 }
 
-.table thead th {
-    background-color: var(--table-header-bg) !important;
-    color: var(--text-color);
+.table {
+  --bs-table-color: var(--text-color);
+  --bs-table-bg: var(--card-bg-color);
+  --bs-table-border-color: var(--table-header-bg);
+  --bs-table-striped-color: var(--text-color);
+  --bs-table-striped-bg: var(--table-striped-bg);
+  --bs-table-hover-color: var(--text-color);
+  --bs-table-hover-bg: var(--table-hover-bg);
 }
 
-.table.themed-table tbody,
-.table:not(.themed-table) tbody {
-    background-color: var(--panel-bg-color);
+.table thead th {
+    background-color: var(--table-header-bg) !important; /* Keep this for header separation */
+    color: var(--text-color);
 }
 
 #sensorOutput {
     background-color: var(--panel-bg-color) !important;
-    color: var(--text-color);
-}
-
-.table tbody, .table tbody td, .table tbody th {
     color: var(--text-color);
 }
 
