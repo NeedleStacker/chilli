@@ -232,8 +232,19 @@ document.addEventListener("DOMContentLoaded", () => {
     // INICIJALIZACIJA ZA ALL_DATA.HTML
     // ====================================================================
     function initAllDataPage() {
+        const whereInput = document.getElementById('whereInput');
+        const daysInput = document.getElementById('days-input');
+
+        const generateDateFilter = (days) => {
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(endDate.getDate() - days);
+            const formatDate = d => d.toISOString().split('T')[0];
+            return `timestamp BETWEEN '${formatDate(startDate)}' AND '${formatDate(endDate)}'`;
+        };
+
         async function loadAllData() {
-            const where = document.getElementById('whereInput').value.trim();
+            const where = whereInput.value.trim();
             const url = where ? `/api/logs/all?where=${encodeURIComponent(where)}` : '/api/logs/all';
             const data = await fetchJSON(url);
 
@@ -248,7 +259,6 @@ document.addEventListener("DOMContentLoaded", () => {
             createOrUpdateChart('soilMoistureChart', 'line', { labels, datasets: [{ label: 'Soil Moisture (%)', data: data.map(r => r.soil_percent), borderColor: 'green', tension: 0.2, fill: false }] }, getDefaultChartOptions());
             createOrUpdateChart('luxChart', 'line', { labels, datasets: [{ label: 'Lux', data: data.map(r => r.lux), borderColor: 'purple', tension: 0.2, fill: false }] }, luxOptions);
 
-            // Ažuriranje tablice
             const tbody = document.getElementById('logsBody');
             tbody.innerHTML = "";
             data.slice().reverse().forEach(r => {
@@ -257,7 +267,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 tbody.appendChild(tr);
             });
 
-            // Ažuriranje statistike
             const stats = (data => ({
                 air_temp: (arr => arr.reduce((a, b) => a + b, 0) / arr.length)(data.map(r => r.air_temp).filter(v => v !== null)),
                 air_humidity: (arr => arr.reduce((a, b) => a + b, 0) / arr.length)(data.map(r => r.air_humidity).filter(v => v !== null)),
@@ -268,24 +277,30 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('stats').innerText = JSON.stringify(stats, (key, value) => (typeof value === 'number' ? value.toFixed(2) : value), 2);
         }
 
+        const updateDaysAndReload = (change) => {
+            let currentDays = parseInt(daysInput.value, 10) || 30;
+            currentDays += change;
+            if (currentDays < 1) currentDays = 1;
+            daysInput.value = currentDays;
+            whereInput.value = generateDateFilter(currentDays);
+            loadAllData();
+        };
+
         // Event Listeners
         document.getElementById('filterBtn').addEventListener('click', loadAllData);
-        document.querySelectorAll('.example-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                let value = btn.textContent.trim();
-                if (value.includes('BETWEEN')) {
-                    const t = new Date(), p = new Date();
-                    p.setDate(t.getDate() - 30);
-                    const f = d => d.toISOString().split('T')[0];
-                    value = `timestamp BETWEEN '${f(p)}' AND '${f(t)}'`;
-                }
-                document.getElementById('whereInput').value = value;
-                loadAllData();
-            });
+        document.getElementById('btn-days-minus-5').addEventListener('click', () => updateDaysAndReload(-5));
+        document.getElementById('btn-days-plus-5').addEventListener('click', () => updateDaysAndReload(5));
+        daysInput.addEventListener('change', () => {
+            const days = parseInt(daysInput.value, 10) || 30;
+            if (days < 1) daysInput.value = 1;
+            whereInput.value = generateDateFilter(days);
+            loadAllData();
         });
+
         setupDeleteRowsHandler(loadAllData);
 
         // Inicijalno učitavanje
+        whereInput.value = generateDateFilter(30);
         loadAllData();
     }
 

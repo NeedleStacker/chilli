@@ -27,17 +27,13 @@
       <input type="text" id="whereInput" class="form-control" value="id > 1000" placeholder="npr. air_temp > 25 AND lux < 1000">
       <button class="btn btn-primary" id="filterBtn">Primijeni filter</button>
     </div>
-	<small class="form-text text-muted mb-1">Primjeri WHERE uvjeta:</small>
-	<div class="d-flex flex-wrap gap-2 mb-3">
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">id &gt; 1000</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">air_temp &gt; 25</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">
-      timestamp BETWEEN Today-30days AND Today
-      </button>
-	</div>
+    <small class="form-text text-muted mb-1">Podaci za zadnjih:</small>
+    <div class="input-group mt-1">
+        <button class="btn btn-outline-secondary" type="button" id="btn-days-minus-5">-5</button>
+        <input type="number" class="form-control" id="days-input" value="30" style="text-align: center;">
+        <button class="btn btn-outline-secondary" type="button" id="btn-days-plus-5">+5</button>
+        <label class="input-group-text" for="days-input">dana</label>
+    </div>
   </div>
 
   <canvas id="airTempChart"></canvas>
