@@ -1,49 +1,195 @@
-/* styles.css - preseljeni stilovi iz index.html */
+/* styles.css - Centralizirani i tematski stilovi */
+
+/* ==================================================================== */
+/* DEFINICIJE TEMA KROZ CSS VARIJABLE */
+/* ==================================================================== */
+
+/* 1. Svijetla (Light) Tema - Default */
+html[data-theme="light"] {
+  --bg-color: #f8f9fa;
+  --text-color: #212529;
+  --card-bg-color: #ffffff;
+  --card-border-color: #dee2e6;
+  --table-header-bg-color: #e9ecef;
+  --table-header-text-color: #495057;
+  --table-stripe-color: #f2f2f2;
+  --unstable-row-color: #fff3cd;
+  --link-color: #0d6efd;
+  --accent-color: #0d6efd;
+  --danger-color: #dc3545;
+  --success-color: #198754;
+  --sensor-output-bg: #e9ecef; /* Usklađeno s input poljima */
+}
+
+/* 2. Tamna (Dark) Tema */
+html[data-theme="dark"] {
+  --bg-color: #121212;
+  --text-color: #e9ecef;
+  --card-bg-color: #1e1e1e;
+  --card-border-color: #444;
+  --table-header-bg-color: #343a40;
+  --table-header-text-color: #f8f9fa;
+  --table-stripe-color: #2c3034;
+  --unstable-row-color: #665d3d;
+  --link-color: #6ea8fe;
+  --accent-color: #6ea8fe;
+  --danger-color: #f17c7c;
+  --success-color: #75b798;
+  --sensor-output-bg: #343a40; /* Usklađeno s input poljima */
+}
+
+/* 3. Jesenska (Autumn) Tema */
+html[data-theme="autumn"] {
+  --bg-color: #f4e3c1;        /* Svijetlo bež pozadina */
+  --text-color: #3e2f1c;      /* Tamno smeđi tekst */
+  --card-bg-color: #fffaf0;    /* Kremasta boja kartica */
+  --card-border-color: #d2b48c; /* Boja pijeska za obrube */
+  --table-header-bg-color: #c8a077; /* Topla smeđa za header */
+  --table-header-text-color: #ffffff; /* Bijeli tekst na headeru */
+  --table-stripe-color: #faebd7;  /* Svjetlija kremasta za pruge */
+  --unstable-row-color: #ffdab9;  /* Boja breskve za nestabilne redove */
+  --link-color: #8b4513;      /* Boja sedla za linkove */
+  --accent-color: #d2691e;    /* Čokoladna kao akcent */
+  --danger-color: #a0522d;      /* Sienna za opasnost */
+  --success-color: #556b2f;      /* Tamno maslinasta za uspjeh */
+  --sensor-output-bg: #faebd7; /* Usklađeno s prugama tablice */
+}
+
+/* ==================================================================== */
+/* OSNOVNI STILOVI TIJELA I ELEMENATA */
+/* ==================================================================== */
+
 body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
   padding: 20px;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-color);
+}
+
+.card {
+    background-color: var(--card-bg-color);
+    border: 1px solid var(--card-border-color);
+}
+
+.form-control, .form-select {
+    background-color: var(--card-bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--card-border-color);
+}
+.form-control:focus, .form-select:focus {
+    background-color: var(--card-bg-color);
+    color: var(--text-color);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 0.25rem rgba(var(--accent-color), 0.25);
+}
+
+pre, #sensorOutput {
+    background-color: var(--sensor-output-bg) !important; /* !important to override inline style */
+    color: var(--text-color);
+    border: 1px solid var(--card-border-color);
+    padding: 10px;
+    border-radius: 6px;
+}
+
+/* ==================================================================== */
+/* STILOVI TABLICA (s ljepljivim headerom) */
+/* ==================================================================== */
+
+.table-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--card-border-color);
+    border-radius: 6px;
+}
+
+.table {
+    background-color: var(--card-bg-color);
+    color: var(--text-color);
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th, .table td {
+    padding: 0.75rem;
+    vertical-align: top;
+    border-top: 1px solid var(--card-border-color);
+    font-size: 0.85rem;
+}
+
+.table thead th {
+    background-color: var(--table-header-bg-color);
+    color: var(--table-header-text-color);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    border-bottom: 2px solid var(--card-border-color);
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: var(--table-stripe-color);
+}
+
+.unstable {
+  background-color: var(--unstable-row-color) !important;
+}
+
+/* ==================================================================== */
+/* STILOVI GRAFIKONA */
+/* ==================================================================== */
+
+canvas {
+  border: 1px solid var(--card-border-color);
+  border-radius: 6px;
+  /* Pozadina se sada kontrolira kroz Chart.js plugin i varijable */
 }
 
 #chart-wrap {
   display: flex;
   justify-content: center;
   margin-bottom: 20px;
+  gap: 10px;
+}
+#chart-wrap > div {
+    flex: 1;
 }
 
-.left-table {
-  max-height: 60vh;
-  overflow: auto;
+/* ==================================================================== */
+/* THEME SWITCHER */
+/* ==================================================================== */
+.theme-switcher {
+    position: fixed;
+    top: 10px;
+    right: 20px;
+    z-index: 1000;
+}
+.theme-switcher label {
+    margin-right: 5px;
+    font-size: 0.9rem;
+}
+#theme-select {
+    padding: 5px;
+    border-radius: 5px;
 }
 
-td,
-th {
-  font-size: 0.85rem;
-}
 
-.unstable {
-  background-color: #fff3cd !important;
-  /* --bs-body-bg: yellow !important; (ostavljeno izvorno ali ne treba) */
-}
-
-/* Canvas styling */
-canvas {
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-}
-
-/* Relay timeline / table minor tweaks */
-#relayDurations {
-  margin-top: 8px;
-  font-size: 0.95rem;
-}
-
-/* Responsive fixes */
+/* ==================================================================== */
+/* RESPONZIVNOST */
+/* ==================================================================== */
 @media (max-width: 768px) {
-  #chart-wrap > div {
+  #chart-wrap {
     flex-direction: column;
   }
   canvas {
     width: 100% !important;
     height: 200px !important;
+  }
+  .theme-switcher {
+      position: static;
+      margin-bottom: 15px;
+      text-align: center;
   }
 }

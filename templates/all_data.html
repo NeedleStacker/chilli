@@ -8,6 +8,16 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+<!-- THEME SWITCHER -->
+<div class="theme-switcher">
+    <label for="theme-select">Tema:</label>
+    <select id="theme-select" class="form-select form-select-sm">
+        <option value="light">☀️ Light</option>
+        <option value="dark">🌑 Dark</option>
+        <option value="autumn">🍂 Autumn</option>
+    </select>
+</div>
+
 <div class="container-fluid">
   <h2 class="mb-4">📊 Svi podaci iz baze</h2>
 
@@ -24,11 +34,9 @@
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">soil_percent &lt; 30</button>
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">lux &lt; 500</button>
 	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">stable = 0</button>
-	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn"
-  onclick="this.textContent = (d => `timestamp BETWEEN '${d[0]}' AND '${d[1]}'`)((() => { const t = new Date(), p = new Date(); p.setDate(t.getDate() - 30); const f = d => d.toISOString().split('T')[0]; return [f(p), f(t)]; })())">
-  timestamp BETWEEN Today-30days AND Today
-</button>
-
+	  <button type="button" class="btn btn-sm btn-outline-secondary example-btn">
+      timestamp BETWEEN Today-30days AND Today
+      </button>
 	</div>
   </div>
 
@@ -66,6 +74,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/all_data.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 </body>
 </html>
