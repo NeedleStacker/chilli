@@ -292,7 +292,7 @@ def toggle_relay(relay_id: str):
 def relay_log_data():
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
-    cur.execute("SELECT timestamp, relay_name, action FROM relay_log ORDER BY timestamp DESC LIMIT 15")
+    cur.execute("SELECT timestamp, relay_name, action FROM relay_log ORDER BY timestamp DESC LIMIT 10")
     rows = cur.fetchall()
     conn.close()
     data = []
