@@ -12,6 +12,16 @@
 		<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 	</head>
 	<body>
+		<!-- THEME SWITCHER -->
+		<div class="theme-switcher">
+			<label for="theme-select">Tema:</label>
+			<select id="theme-select" class="form-select form-select-sm">
+				<option value="light">☀️ Light</option>
+				<option value="dark">🌑 Dark</option>
+				<option value="autumn">🍂 Autumn</option>
+			</select>
+		</div>
+
 		<div class="container-fluid mt-2">
 			<!-- GRAF -->
 			<div id="chart-wrap" style="display: flex; flex-direction: column; gap: 10px;">
