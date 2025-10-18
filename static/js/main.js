@@ -2,27 +2,6 @@
 /* Ovaj fajl mora se učitati nakon Chart.js (CDN) i nakon što su HTML elementi u DOM-u. */
 
 document.addEventListener("DOMContentLoaded", () => {
-    // ------- THEME SWITCHER LOGIC -------
-    const themeDropdown = document.getElementById('themeDropdown');
-    const currentTheme = localStorage.getItem('theme') || 'dark';
-
-    const applyTheme = (theme) => {
-        document.documentElement.setAttribute('data-theme', theme);
-        if (themeDropdown) {
-            themeDropdown.textContent = theme.charAt(0).toUpperCase() + theme.slice(1);
-        }
-    };
-
-    applyTheme(currentTheme);
-
-    document.querySelectorAll('.theme-select').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const theme = item.getAttribute('data-theme');
-            applyTheme(theme);
-            localStorage.setItem('theme', theme);
-        });
-    });
 
 	// ------- helperi -------
 	function formatTime(ts) {
@@ -39,57 +18,28 @@ document.addEventListener("DOMContentLoaded", () => {
 		return await r.json();
 	}
 
-	// ------- Chart Theming -------
-	const getThemeColors = () => {
-		const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-		const rootStyles = getComputedStyle(document.documentElement);
-
-		if (theme === 'dark') {
-			return {
-				backgroundColor: rootStyles.getPropertyValue('--panel-bg-color').trim(),
-				borderColor: '#0dcaf0',
-				gridColor: 'rgba(255, 255, 255, 0.15)',
-				textColor: '#f0f0f0'
-			};
+	// ------- Chart background plugin -------
+	const chartAreaBackgroundPlugin = {
+		id: 'chartAreaBackground',
+		beforeDraw(chart, args, options) {
+			const {
+				ctx,
+				chartArea
+			} = chart;
+			ctx.save();
+			ctx.fillStyle = options.color || 'white';
+			ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+			ctx.restore();
 		}
-		return {
-			backgroundColor: '#ffffff',
-			borderColor: '#0d6efd',
-			gridColor: 'rgba(0, 0, 0, 0.1)',
-			textColor: '#212529'
-		};
 	};
 
 	// ------- inicijalizacija chartova -------
 	const ctxTemp = document.getElementById('tempChart').getContext('2d');
-	const createChartOptions = () => {
-		const themeColors = getThemeColors();
-		return {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: { mode: 'index', intersect: false },
-			scales: {
-				y: {
-					ticks: { color: themeColors.textColor },
-					grid: { color: themeColors.gridColor }
-				},
-				x: {
-					ticks: { color: themeColors.textColor },
-					grid: { color: themeColors.gridColor }
-				}
-			},
-			plugins: {
-				legend: { labels: { color: themeColors.textColor } }
-			}
-		};
-	};
-
 	const tempChart = new Chart(ctxTemp, {
 		type: 'line',
 		data: {
 			labels: [],
-			datasets: [
-				{
+			datasets: [{
 					label: 'Air Temp °C',
 					borderColor: 'rgba(0,123,255,1)',
 					backgroundColor: 'rgba(0,123,255,0.1)',
@@ -107,7 +57,26 @@ document.addEventListener("DOMContentLoaded", () => {
 				}
 			]
 		},
-		options: createChartOptions()
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			interaction: {
+				mode: 'index',
+				intersect: false
+			},
+			scales: {
+				y: {
+					min: 0,
+					max: 50
+				}
+			},
+			plugins: {
+				chartAreaBackground: {
+					color: 'lavender'
+				}
+			}
+		},
+		plugins: [chartAreaBackgroundPlugin]
 	});
 
 	const ctxHum = document.getElementById('humChart').getContext('2d');
@@ -124,7 +93,26 @@ document.addEventListener("DOMContentLoaded", () => {
 				tension: 0.2
 			}]
 		},
-		options: createChartOptions()
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			interaction: {
+				mode: 'index',
+				intersect: false
+			},
+			scales: {
+				y: {
+					min: 0,
+					max: 100
+				}
+			},
+			plugins: {
+				chartAreaBackground: {
+					color: 'honeydew'
+				}
+			}
+		},
+		plugins: [chartAreaBackgroundPlugin]
 	});
 
 	const ctxSoil = document.getElementById('soilChart').getContext('2d');
@@ -141,7 +129,26 @@ document.addEventListener("DOMContentLoaded", () => {
 				tension: 0.2
 			}]
 		},
-		options: createChartOptions()
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			interaction: {
+				mode: 'index',
+				intersect: false
+			},
+			scales: {
+				y: {
+					min: 0,
+					max: 100
+				}
+			},
+			plugins: {
+				chartAreaBackground: {
+					color: 'mistyrose'
+				}
+			}
+		},
+		plugins: [chartAreaBackgroundPlugin]
 	});
 
 	const ctxLux = document.getElementById('luxChart').getContext('2d');
@@ -158,25 +165,26 @@ document.addEventListener("DOMContentLoaded", () => {
 				tension: 0.2
 			}]
 		},
-		options: createChartOptions()
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			interaction: {
+				mode: 'index',
+				intersect: false
+			},
+			scales: {
+				y: {
+					beginAtZero: true
+				}
+			},
+			plugins: {
+				chartAreaBackground: {
+					color: 'lavender'
+				}
+			}
+		},
+		plugins: [chartAreaBackgroundPlugin]
 	});
-
-    const allCharts = [tempChart, humChart, soilChart, luxChart];
-    const updateAllChartsTheme = () => {
-        const newOptions = createChartOptions();
-        allCharts.forEach(chart => {
-            chart.options = newOptions;
-            chart.update();
-        });
-    };
-
-    // Update charts when theme changes
-    document.querySelectorAll('.theme-select').forEach(item => {
-        item.addEventListener('click', () => {
-            // timeout to allow theme to apply before redrawing
-            setTimeout(updateAllChartsTheme, 50);
-        });
-    });
 
 
 	// ------- Grafikon paljenja/gasenja releja (signal) -------
